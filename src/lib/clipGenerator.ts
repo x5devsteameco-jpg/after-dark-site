@@ -95,13 +95,23 @@ function drawProgress(ctx: CanvasRenderingContext2D, progress: number, accent: s
 }
 
 export async function generateClip(settings: ClipSettings): Promise<Blob> {
+  if (settings.scenes.length === 0) {
+    throw new Error('Choose at least one media asset for the clip.')
+  }
+
   const canvas = document.createElement('canvas')
   canvas.width = CANVAS_WIDTH
   canvas.height = CANVAS_HEIGHT
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('Canvas context could not be created.')
 
-  const images = await Promise.all(settings.scenes.map((scene) => loadImage(scene.poster ?? scene.src)))
+  const images = await Promise.all(
+    settings.scenes.map((scene) => loadImage(scene.poster ?? scene.src)),
+  )
+  if (images.length === 0) {
+    throw new Error('Clip assets could not be loaded.')
+  }
+
   const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
     ? 'video/webm;codecs=vp9'
     : 'video/webm'
@@ -116,7 +126,8 @@ export async function generateClip(settings: ClipSettings): Promise<Blob> {
     if (event.data.size > 0) chunks.push(event.data)
   }
 
-  const sceneDuration = settings.duration / settings.scenes.length
+  const sceneCount = Math.max(settings.scenes.length, 1)
+  const sceneDuration = settings.duration / sceneCount
 
   const result = new Promise<Blob>((resolve, reject) => {
     recorder.onerror = () => reject(new Error('Video recording failed.'))
@@ -126,41 +137,53 @@ export async function generateClip(settings: ClipSettings): Promise<Blob> {
   recorder.start()
   const started = performance.now()
 
-  await new Promise<void>((resolve) => {
-    const render = (timestamp: number) => {
-      const elapsed = (timestamp - started) / 1000
-      const progress = Math.min(elapsed / settings.duration, 1)
-      const sceneIndex = Math.min(
-        settings.scenes.length - 1,
-        Math.floor(elapsed / sceneDuration),
-      )
-      const sceneElapsed = elapsed - sceneIndex * sceneDuration
-      const localT = Math.max(0, Math.min(sceneElapsed / sceneDuration, 1))
-      const zoom = 1 + localT * 0.09
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const render = (timestamp: number) => {
+        try {
+          const elapsed = Math.max(0, (timestamp - started) / 1000)
+          const progress = Math.min(elapsed / settings.duration, 1)
+          const rawSceneIndex = Math.floor(elapsed / sceneDuration)
+          const sceneIndex = Math.min(sceneCount - 1, Math.max(0, rawSceneIndex))
+          const sceneElapsed = elapsed - sceneIndex * sceneDuration
+          const localT = Math.max(0, Math.min(sceneElapsed / sceneDuration, 1))
+          const zoom = 1 + localT * 0.09
+          const currentImage = images[sceneIndex] ?? images[0]
+          const currentScene = settings.scenes[sceneIndex] ?? settings.scenes[0]
 
-      ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT)
-      drawCoverImage(ctx, images[sceneIndex], zoom)
+          if (!currentImage || !currentScene) {
+            throw new Error('Clip scene data is incomplete.')
+          }
 
-      const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT)
-      gradient.addColorStop(0, 'rgba(0,0,0,0.22)')
-      gradient.addColorStop(1, 'rgba(0,0,0,0.62)')
-      ctx.fillStyle = gradient
-      ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT)
+          ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT)
+          drawCoverImage(ctx, currentImage, zoom)
 
-      drawTextBlock(ctx, settings, settings.scenes[sceneIndex].title)
-      drawProgress(ctx, progress, settings.accent)
+          const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT)
+          gradient.addColorStop(0, 'rgba(0,0,0,0.22)')
+          gradient.addColorStop(1, 'rgba(0,0,0,0.62)')
+          ctx.fillStyle = gradient
+          ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT)
 
-      if (elapsed < settings.duration) {
-        requestAnimationFrame(render)
-      } else {
-        resolve()
+          drawTextBlock(ctx, settings, currentScene.title)
+          drawProgress(ctx, progress, settings.accent)
+
+          if (elapsed < settings.duration) {
+            requestAnimationFrame(render)
+          } else {
+            resolve()
+          }
+        } catch (error) {
+          reject(error instanceof Error ? error : new Error('Clip rendering failed.'))
+        }
       }
-    }
 
-    requestAnimationFrame(render)
-  })
+      requestAnimationFrame(render)
+    })
 
-  await wait(250)
-  recorder.stop()
+    await wait(250)
+  } finally {
+    if (recorder.state !== 'inactive') recorder.stop()
+  }
+
   return result
 }
