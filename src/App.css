@@ -1,16 +1,16 @@
-@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Cinzel:wght@500;600;700&family=Great+Vibes&family=Manrope:wght@400;500;600;700;800&display=swap');
 
 :root {
   --bg: #050403;
   --panel: #0a0806;
   --panel-soft: rgba(12, 10, 8, 0.96);
-  --line: rgba(201, 145, 74, 0.42);
-  --line-soft: rgba(201, 145, 74, 0.2);
-  --text: #f4ead7;
-  --muted: #b99f7b;
-  --amber: #de8f2f;
-  --pink: #ff5f9d;
-  --green: #9ae660;
+  --line: rgba(229, 149, 61, 0.42);
+  --line-soft: rgba(229, 149, 61, 0.18);
+  --text: #f7ead5;
+  --muted: #c3a177;
+  --amber: #f09a3e;
+  --pink: #ff7fb1;
+  --green: #a7ef64;
   --purple: #d580ff;
   --shadow: 0 28px 70px rgba(0, 0, 0, 0.42);
 }
@@ -92,14 +92,15 @@ video {
 .brand-mark {
   display: grid;
   place-items: center;
-  width: 58px;
-  height: 58px;
-  border-radius: 18px;
-  border: 1px solid var(--line);
+  width: 66px;
+  height: 66px;
   color: var(--amber);
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 2rem;
-  letter-spacing: 0.06em;
+  filter: drop-shadow(0 0 14px rgba(240, 154, 62, 0.12));
+}
+
+.brand-monogram {
+  width: 42px;
+  height: 50px;
 }
 
 .brand-type p,
@@ -128,6 +129,7 @@ video {
   font-size: 2.2rem;
   letter-spacing: 0.05em;
   color: var(--amber);
+  text-shadow: 0 0 14px rgba(240, 154, 62, 0.14);
 }
 
 .site-nav {
@@ -138,7 +140,7 @@ video {
 }
 
 .site-nav a {
-  color: #f6ead5;
+  color: #efe0c7;
 }
 
 .subscribe-button,
@@ -153,9 +155,9 @@ video {
   min-height: 50px;
   padding: 0 20px;
   border-radius: 14px;
-  border: 1px solid rgba(255, 95, 157, 0.7);
-  color: #ffdce9;
-  box-shadow: inset 0 0 0 1px rgba(255, 95, 157, 0.12), 0 0 30px rgba(255, 95, 157, 0.12);
+  border: 1px solid rgba(255, 127, 177, 0.78);
+  color: #ffe1eb;
+  box-shadow: inset 0 0 0 1px rgba(255, 127, 177, 0.14), 0 0 26px rgba(255, 127, 177, 0.14);
 }
 
 .site-main {
@@ -194,7 +196,7 @@ video {
   position: relative;
   margin-bottom: 18px;
   font-size: 1rem;
-  color: #e1a451;
+  color: #dfad65;
 }
 
 .hero-copy h1,
@@ -203,33 +205,40 @@ video {
 .drop-copy h4,
 .feature-copy h4 {
   margin: 0;
-  font-family: 'Cormorant Garamond', serif;
+  font-family: 'Cinzel', serif;
 }
 
 .hero-copy h1 {
   position: relative;
-  font-size: clamp(4.6rem, 8vw, 7.2rem);
-  line-height: 0.9;
-  color: #efb05e;
-  text-shadow: 0 0 18px rgba(239, 176, 94, 0.18);
+  font-size: clamp(4.8rem, 8vw, 7.5rem);
+  line-height: 0.92;
+  letter-spacing: 0.03em;
+  color: #f3a14b;
+  text-shadow:
+    0 0 4px rgba(255, 213, 163, 0.34),
+    0 0 20px rgba(243, 161, 75, 0.18);
 }
 
 .hero-copy h2 {
   position: relative;
-  margin-top: 4px;
-  font-size: clamp(3.5rem, 6vw, 5rem);
-  line-height: 0.94;
-  font-style: italic;
-  color: #ffaecc;
-  text-shadow: 0 0 16px rgba(255, 95, 157, 0.2);
+  margin-top: 6px;
+  margin-left: 8px;
+  font-family: 'Great Vibes', cursive;
+  font-size: clamp(4.2rem, 6.8vw, 6rem);
+  line-height: 0.9;
+  color: #ffb169;
+  text-shadow:
+    0 0 5px rgba(255, 214, 176, 0.32),
+    0 0 18px rgba(255, 177, 105, 0.18);
 }
 
 .hero-heart {
   position: relative;
-  margin: 16px 0 22px;
+  margin: 8px 0 18px 10px;
   color: var(--pink);
-  font-size: 4rem;
+  font-size: 4.2rem;
   line-height: 1;
+  text-shadow: 0 0 18px rgba(255, 127, 177, 0.24);
 }
 
 .hero-bullets {
@@ -299,7 +308,7 @@ video {
 
 .panel-header h3 {
   font-size: clamp(2.4rem, 4vw, 3.3rem);
-  color: #d49a43;
+  color: #d9a04d;
   letter-spacing: 0.04em;
 }
 

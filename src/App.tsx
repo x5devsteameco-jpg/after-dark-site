@@ -28,6 +28,26 @@ function ratingDots(count: number) {
   ))
 }
 
+function BrandMonogram() {
+  return (
+    <svg
+      className="brand-monogram"
+      viewBox="0 0 92 108"
+      aria-hidden="true"
+      role="img"
+    >
+      <g fill="none" stroke="currentColor" strokeWidth="7" strokeLinecap="square" strokeLinejoin="miter">
+        <path d="M16 10v88" />
+        <path d="M16 14h30c12 0 20 7 20 18 0 10-7 16-20 16H16" />
+        <path d="M16 54h28c13 0 22 7 22 19 0 13-10 21-24 21H16" />
+        <path d="M77 14H53c-17 0-29 14-29 40 0 27 12 40 29 40h24" />
+        <path d="M74 34H49" />
+        <path d="M74 74H49" />
+      </g>
+    </svg>
+  )
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState<(typeof vaultTabs)[number]['key']>('all')
 
@@ -41,7 +61,7 @@ function App() {
       <header className="site-header">
         <a className="brand-lockup" href="#">
           <div className="brand-mark">
-            <span>CB</span>
+            <BrandMonogram />
           </div>
           <div className="brand-type">
             <p>Cross Border x Legacy</p>
@@ -234,7 +254,7 @@ function App() {
       <footer className="site-footer" id="footer">
         <div className="footer-brand">
           <div className="brand-mark">
-            <span>CB</span>
+            <BrandMonogram />
           </div>
           <div className="brand-type">
             <p>Cross Border x Legacy</p>
