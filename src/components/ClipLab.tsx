@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ChangeEvent } from 'react'
 import type { MediaItem } from '../data/media'
 import { generateClip } from '../lib/clipGenerator'
 import { MediaCard } from './MediaCard'
@@ -14,6 +14,7 @@ const palette = [
 ]
 
 export function ClipLab({ options }: Props) {
+  const [uploadedMedia, setUploadedMedia] = useState<MediaItem[]>([])
   const [selectedIds, setSelectedIds] = useState<string[]>(options.slice(0, 3).map((item) => item.id))
   const [title, setTitle] = useState('Tonight’s Features')
   const [subtitle, setSubtitle] = useState('Cherry Limeade. The Rolled Fashioned. Slurricane.')
@@ -23,9 +24,11 @@ export function ClipLab({ options }: Props) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const allOptions = useMemo(() => [...uploadedMedia, ...options], [options, uploadedMedia])
+
   const selectedMedia = useMemo(
-    () => options.filter((item) => selectedIds.includes(item.id)),
-    [options, selectedIds],
+    () => allOptions.filter((item) => selectedIds.includes(item.id)),
+    [allOptions, selectedIds],
   )
 
   const toggle = (item: MediaItem) => {
@@ -59,6 +62,38 @@ export function ClipLab({ options }: Props) {
       setIsGenerating(false)
     }
   }
+
+  const handleUpload = (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? [])
+    if (files.length === 0) return
+
+    const incoming = files
+      .filter((file) => file.type.startsWith('image/'))
+      .slice(0, 12)
+      .map((file, index) => ({
+        id: `upload-${file.name}-${index}-${Date.now()}`,
+        title: file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' '),
+        subtitle: 'Uploaded image',
+        src: URL.createObjectURL(file),
+        kind: 'photo' as const,
+        accent: palette[index % palette.length].value,
+      }))
+
+    setUploadedMedia((current) => [...incoming, ...current].slice(0, 12))
+    setSelectedIds((current) => {
+      const next = [...incoming.map((item) => item.id), ...current]
+      return Array.from(new Set(next)).slice(0, 4)
+    })
+    event.target.value = ''
+  }
+
+  useEffect(() => {
+    return () => {
+      uploadedMedia.forEach((item) => {
+        if (item.id.startsWith('upload-')) URL.revokeObjectURL(item.src)
+      })
+    }
+  }, [uploadedMedia])
 
   return (
     <section className="clip-lab-shell" id="clip-lab">
@@ -116,6 +151,10 @@ export function ClipLab({ options }: Props) {
               <li>Click generate to render a downloadable short clip.</li>
             </ol>
           </div>
+          <label>
+            <span>Bring your own assets</span>
+            <input type="file" accept="image/*" multiple onChange={handleUpload} />
+          </label>
           <button className="generate-button" disabled={isGenerating} onClick={handleGenerate}>
             {isGenerating ? 'Generating clip…' : 'Generate clip'}
           </button>
@@ -131,7 +170,7 @@ export function ClipLab({ options }: Props) {
         </aside>
 
         <div className="clip-options">
-          {options.map((item) => (
+          {allOptions.map((item) => (
             <MediaCard
               key={item.id}
               item={item}

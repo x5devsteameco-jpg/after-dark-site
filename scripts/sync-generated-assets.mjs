@@ -1,15 +1,38 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 
-const source = '/Users/Devon/Pictures/only fans assets/generated_campaign'
-const target = '/Users/Devon/Documents/Only Fans Assets/after-dark-site/public/media'
+const cwd = process.cwd()
+const argSource = process.argv[2]
+const envSource = process.env.SOURCE_MEDIA_DIR
+const source = argSource
+  ? path.resolve(cwd, argSource)
+  : envSource
+    ? path.resolve(cwd, envSource)
+    : path.resolve(cwd, 'seed-assets')
+const target = path.resolve(cwd, 'public/media')
 
-await fs.mkdir(target, { recursive: true })
-const entries = await fs.readdir(source)
+async function main() {
+  try {
+    const stats = await fs.stat(source)
+    if (!stats.isDirectory()) throw new Error(`${source} is not a directory`)
+  } catch {
+    console.error(`Asset source not found: ${source}`)
+    console.error('Usage: npm run sync:assets -- /path/to/asset-folder')
+    console.error('Or set SOURCE_MEDIA_DIR, or place files in ./seed-assets')
+    process.exit(1)
+  }
 
-for (const entry of entries) {
-  if (!/\.(jpg|jpeg|png|mp4)$/i.test(entry)) continue
-  await fs.copyFile(path.join(source, entry), path.join(target, entry))
+  await fs.mkdir(target, { recursive: true })
+  const entries = await fs.readdir(source)
+  let copied = 0
+
+  for (const entry of entries) {
+    if (!/\.(jpg|jpeg|png|mp4|webp)$/i.test(entry)) continue
+    await fs.copyFile(path.join(source, entry), path.join(target, entry))
+    copied += 1
+  }
+
+  console.log(`Synced ${copied} assets from ${source} into ${target}`)
 }
 
-console.log(`Synced ${entries.length} generated assets into ${target}`)
+await main()

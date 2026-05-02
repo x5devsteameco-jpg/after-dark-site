@@ -1,151 +1,163 @@
 import { useMemo, useState } from 'react'
 import './App.css'
 import { ClipLab } from './components/ClipLab'
-import { MediaCard } from './components/MediaCard'
-import { SectionHeader } from './components/SectionHeader'
-import { featuredProducts, heroStats, mediaLibrary, storyboardLibrary, type MediaKind } from './data/media'
+import type { MediaKind } from './data/media'
+import {
+  clipLibrary,
+  featuredDrops,
+  footerColumns,
+  generatorSteps,
+  mediaVaultItems,
+  navLinks,
+  tonightFeatures,
+} from './data/media'
 
-const tabs: Array<{ key: MediaKind | 'all'; label: string }> = [
+const vaultTabs: Array<{ key: MediaKind | 'all'; label: string }> = [
   { key: 'all', label: 'All' },
-  { key: 'video', label: 'Clips' },
-  { key: 'promo', label: 'Promos' },
+  { key: 'reel', label: 'Reels' },
   { key: 'story', label: 'Stories' },
-  { key: 'carousel', label: 'Carousel' },
-  { key: 'reel', label: 'Reel Covers' },
+  { key: 'carousel', label: 'Carousels' },
+  { key: 'promo', label: 'Promos' },
 ]
 
-function App() {
-  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]['key']>('all')
+function ratingDots(count: number) {
+  return Array.from({ length: 5 }, (_, index) => (
+    <span key={index} className={index < count ? 'active' : ''}>
+      ★
+    </span>
+  ))
+}
 
-  const filteredMedia = useMemo(() => {
-    if (activeTab === 'all') return mediaLibrary
-    return mediaLibrary.filter((item) => item.kind === activeTab)
+function App() {
+  const [activeTab, setActiveTab] = useState<(typeof vaultTabs)[number]['key']>('all')
+
+  const filteredVault = useMemo(() => {
+    if (activeTab === 'all') return mediaVaultItems.slice(0, 6)
+    return mediaVaultItems.filter((item) => item.kind === activeTab).slice(0, 6)
   }, [activeTab])
 
-  const clipOptions = useMemo(
-    () => mediaLibrary.filter((item) => ['promo', 'carousel', 'story', 'reel'].includes(item.kind)),
-    [],
-  )
-
   return (
-    <div className="page-shell">
-      <header className="topbar">
-        <div>
-          <p>Cross Border x Legacy</p>
-          <strong>After Dark Uncensored</strong>
-        </div>
-        <nav>
-          <a href="#drops">Drops</a>
-          <a href="#features">Features</a>
-          <a href="#vault">Vault</a>
-          <a href="#clip-lab">Clip Lab</a>
-          <a href="#pipeline">Pipeline</a>
+    <div className="after-dark-page">
+      <header className="site-header">
+        <a className="brand-lockup" href="#">
+          <div className="brand-mark">
+            <span>CB</span>
+          </div>
+          <div className="brand-type">
+            <p>Cross Border x Legacy</p>
+            <strong>After Dark</strong>
+          </div>
+        </a>
+
+        <nav className="site-nav">
+          {navLinks.map((link) => (
+            <a key={link.label} href={link.href}>
+              {link.label}
+            </a>
+          ))}
         </nav>
+
+        <a className="subscribe-button" href="#clip-lab">
+          Subscribe Now
+        </a>
       </header>
 
-      <main>
-        <section className="hero">
+      <main className="site-main">
+        <section className="hero-shell">
           <div className="hero-copy">
-            <p className="hero-kicker">Live campaign vault</p>
-            <h1>After Dark is now a living content machine.</h1>
-            <p className="hero-body">
-              Cross Border x Legacy now has a polished home for campaign drops, truthful promo
-              creative, vertical stories, exported teasers, and a built-in Clip Lab that can spin
-              up fresh short-form content directly in the browser.
-            </p>
+            <p className="hero-kicker">Cross Border x Legacy</p>
+            <h1>After Dark</h1>
+            <h2>Uncensored</h2>
+            <div className="hero-heart">♡</div>
+            <ul className="hero-bullets">
+              <li>Premium content.</li>
+              <li>Exclusive access.</li>
+              <li>Zero regrets.</li>
+            </ul>
             <div className="hero-actions">
-              <a className="primary-action" href="#clip-lab">
-                Open Clip Lab
-              </a>
-              <a className="secondary-action" href="#vault">
-                Browse the vault
+              <a className="unlock-button" href="#clip-lab">
+                Unlock Exclusive Content
               </a>
             </div>
-            <div className="stats-grid">
-              {heroStats.map((stat) => (
-                <div key={stat.label}>
-                  <span>{stat.label}</span>
-                  <strong>{stat.value}</strong>
-                </div>
-              ))}
-            </div>
+            <p className="hero-note">Private drops. Premium terps. No apologies.</p>
           </div>
 
-          <div className="hero-visual">
-            <div className="hero-visual-main">
-              <img src="/media/collage_luxury_campaign.jpg" alt="Cross Border After Dark collage" />
-              <div className="hero-chip hero-chip-top">Cherry Limeade x The Rolled Fashioned</div>
-            </div>
-            <div className="hero-visual-strip">
-              <article>
-                <img src="/media/feature_sheet_tonights_features.jpg" alt="Tonight's features sheet" />
-                <span>Tonight’s features</span>
-              </article>
-              <article>
-                <video
-                  src="/media/teaser_01_cherry_limeade.mp4"
-                  poster="/media/reel_cover_01.jpg"
-                  muted
-                  autoPlay
-                  loop
-                  playsInline
-                />
-                <span>Live teaser export</span>
-              </article>
-            </div>
-            <div className="hero-chip hero-chip-bottom">Generated campaign pack + live clip tools</div>
-          </div>
-        </section>
-
-        <section className="section" id="drops">
-          <SectionHeader
-            eyebrow="Featured drops"
-            title="The campaign pack now behaves like a real content system."
-            body="Promo cards, exported clips, stories, and campaign posters all live in one polished surface with consistent styling, clear metadata, and direct reuse."
-          />
-          <div className="drops-grid">
-            {mediaLibrary
-              .filter((item) => ['promo', 'video', 'collage'].includes(item.kind))
-              .slice(0, 6)
-              .map((item) => (
-                <MediaCard key={item.id} item={item} />
-              ))}
-          </div>
-        </section>
-
-        <section className="section feature-band" id="features">
-          <div className="feature-sheet">
+          <div className="hero-stage">
             <img
-              src="/media/feature_sheet_tonights_features.jpg"
-              alt="Tonight's features campaign sheet"
+              className="hero-stage-art"
+              src="/media/source-imports/two-can-story.png"
+              alt="Cross Border x Legacy After Dark hero artwork"
             />
-          </div>
-          <div className="feature-copy">
-            <SectionHeader
-              eyebrow="Tonight’s features"
-              title="Cherry Limeade. The Rolled Fashioned. Slurricane."
-              body="The editorial tone stays hot and cinematic, while the product story stays clear, truthful, and easy to use for real campaign work."
-            />
-            <div className="product-stack">
-              {featuredProducts.map((product) => (
-                <article key={product.name} className="product-card" style={{ ['--accent' as string]: product.accent }}>
-                  <h3>{product.name}</h3>
-                  <small>{product.detail}</small>
-                  <p>{product.note}</p>
-                </article>
-              ))}
-            </div>
           </div>
         </section>
 
-        <section className="section" id="vault">
-          <SectionHeader
-            eyebrow="Media vault"
-            title="Filter the campaign library by format and keep it moving."
-            body="The vault exposes clips, stories, promo cards, reel covers, and carousel posts in one place so the site feels like a live content floor, not a dead archive."
-          />
+        <section className="panel" id="drops">
+          <div className="panel-header">
+            <h3>Featured Drops</h3>
+            <a href="#vault">View All Drops →</a>
+          </div>
+
+          <div className="featured-drops-grid">
+            {featuredDrops.map((drop) => (
+              <article key={drop.title} className="drop-card" style={{ ['--accent' as string]: drop.accent }}>
+                <div className="drop-visual">
+                  <img src={drop.src} alt={drop.title} />
+                  <span className="drop-badge">{drop.badge}</span>
+                </div>
+                <div className="drop-copy">
+                  <p>{drop.eyebrow}</p>
+                  <h4>{drop.title}</h4>
+                  <span>{drop.description}</span>
+                </div>
+                <button aria-label={`Open ${drop.title}`}>→</button>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="panel" id="features">
+          <div className="panel-header">
+            <h3>Tonight’s Features</h3>
+            <p>Hand-picked. Highly rated.</p>
+          </div>
+
+          <div className="features-grid">
+            {tonightFeatures.map((feature) => (
+              <article key={feature.name} className="feature-card" style={{ ['--accent' as string]: feature.accent }}>
+                <div className="feature-image">
+                  <img src={feature.image} alt={feature.name} />
+                </div>
+                <div className="feature-copy">
+                  <h4>{feature.name}</h4>
+                  <small>{feature.kicker}</small>
+                  <ul>
+                    {feature.bullets.map((bullet) => (
+                      <li key={bullet}>{bullet}</li>
+                    ))}
+                  </ul>
+                  <div className="rating-list">
+                    {feature.ratings.map((rating) => (
+                      <div key={rating.label} className="rating-row">
+                        <span>{rating.label}</span>
+                        <div>{ratingDots(rating.value)}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <a href="#clip-lab">Explore</a>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="panel" id="vault">
+          <div className="panel-header">
+            <h3>Media Vault</h3>
+            <a href="#clip-lab">View All Media →</a>
+          </div>
+
           <div className="vault-tabs">
-            {tabs.map((tab) => (
+            {vaultTabs.map((tab) => (
               <button
                 key={tab.key}
                 className={activeTab === tab.key ? 'active' : ''}
@@ -155,86 +167,96 @@ function App() {
               </button>
             ))}
           </div>
+
           <div className="vault-grid">
-            {filteredMedia.map((item) => (
-              <MediaCard key={item.id} item={item} />
-            ))}
+            {filteredVault.map((item) => {
+              const isVideo = item.src.endsWith('.mp4')
+
+              return (
+                <article key={item.id} className="vault-card" style={{ ['--accent' as string]: item.accent }}>
+                  <div className="vault-frame">
+                    {isVideo ? (
+                      <video src={item.src} poster={item.poster} muted playsInline controls preload="metadata" />
+                    ) : (
+                      <img src={item.src} alt={item.title} />
+                    )}
+                    <div className="vault-overlay">
+                      <h4>{item.title}</h4>
+                      <span>{item.duration ?? item.subtitle}</span>
+                    </div>
+                  </div>
+                </article>
+              )
+            })}
           </div>
         </section>
 
-        <section className="section board-section">
-          <SectionHeader
-            eyebrow="Storyboard passes"
-            title="The motion side is documented, not improvised."
-            body="Shot-order boards now sit beside stills and exported teasers, creating a clean handoff from creative direction to edit instead of file chaos and guesswork."
-          />
-          <div className="storyboard-grid">
-            {storyboardLibrary.map((item) => (
-              <MediaCard key={item.id} item={item} />
+        <section className="panel generator-panel" id="pipeline">
+          <div className="panel-header">
+            <h3>Behind The Scenes: Generator</h3>
+          </div>
+
+          <div className="generator-steps">
+            {generatorSteps.map((step, index) => (
+              <article key={step.title} className="step-card">
+                <div className="step-icon">{step.icon}</div>
+                <h4>{step.title}</h4>
+                <p>{step.body}</p>
+                {index < generatorSteps.length - 1 ? <span className="step-line" /> : null}
+              </article>
             ))}
+          </div>
+
+          <div className="generator-cta">
+            <div className="generator-cta-copy">
+              <div className="generator-cta-icon">♡</div>
+              <div>
+                <strong>Exclusive content. Straight to your inbox.</strong>
+                <p>Or skip the fake wait and open the clip studio right now.</p>
+              </div>
+            </div>
+            <div className="generator-cta-actions">
+              <input aria-label="Email" placeholder="Enter your email" />
+              <a href="#clip-lab">Unlock Access</a>
+            </div>
           </div>
         </section>
 
-        <ClipLab options={clipOptions} />
-
-        <section className="section pipeline-section" id="pipeline">
-          <SectionHeader
-            eyebrow="Creator workflow"
-            title="The site is wired to the generator on purpose."
-            body="The Python asset builder produces the campaign pack, the site ingests those outputs into a deployable media vault, and the browser-side Clip Lab lets you generate new short-form teasers without leaving the web UI."
-          />
-          <div className="pipeline-grid">
-            <article className="pipeline-card">
-              <span>01</span>
-              <h3>Generate</h3>
-              <p>
-                <code>build_onlyfans_parody_assets.py</code> produces banners, cards, storyboards,
-                clips, and manifests.
-              </p>
-            </article>
-            <article className="pipeline-card">
-              <span>02</span>
-              <h3>Sync</h3>
-              <p>
-                Campaign outputs are copied into <code>public/media</code> so the website ships
-                self-contained on Vercel.
-              </p>
-            </article>
-            <article className="pipeline-card">
-              <span>03</span>
-              <h3>Compose</h3>
-              <p>
-                The site assembles vault views, feature rails, promo modules, and the live Clip Lab
-                from that content set.
-              </p>
-            </article>
-            <article className="pipeline-card">
-              <span>04</span>
-              <h3>Export</h3>
-              <p>
-                Users can preview and download short clips directly in-browser with no fake timers
-                and no invented promo claims.
-              </p>
-            </article>
+        <section className="panel clip-panel" id="clip-lab">
+          <div className="panel-header">
+            <h3>Clip Studio</h3>
+            <p>Upload your own images or use the built-in library from any computer.</p>
           </div>
-          <div className="code-panel">
-            <pre>{`npm run sync:assets
-python3 "/Users/Devon/Pictures/only fans assets/build_onlyfans_parody_assets.py"
-npm run dev`}</pre>
-          </div>
+          <ClipLab options={clipLibrary} />
         </section>
       </main>
 
-      <footer className="site-footer">
-        <div>
-          <p>Cross Border x Legacy</p>
-          <strong>After Dark Uncensored</strong>
+      <footer className="site-footer" id="footer">
+        <div className="footer-brand">
+          <div className="brand-mark">
+            <span>CB</span>
+          </div>
+          <div className="brand-type">
+            <p>Cross Border x Legacy</p>
+            <strong>After Dark</strong>
+          </div>
         </div>
-        <div>
-          <span>Quick start</span>
-          <p>Browse the vault, open Clip Lab, select up to four visuals, generate a teaser, and download it directly from the site.</p>
+
+        <div className="footer-links">
+          {footerColumns.map((column) => (
+            <div key={column.title}>
+              <h4>{column.title}</h4>
+              {column.links.map((link) => (
+                <a key={link} href="#">{link}</a>
+              ))}
+            </div>
+          ))}
         </div>
-        <a href="#clip-lab">Generate another clip</a>
+
+        <div className="footer-side">
+          <strong>Premium content. Exclusive access. Zero regrets.</strong>
+          <span>18+ only. Cannabis-infused products.</span>
+        </div>
       </footer>
     </div>
   )

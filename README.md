@@ -36,17 +36,25 @@ Open the local site and use it like this:
 
 ## Asset Workflow
 
-Regenerate the source campaign pack:
+The website is already deployable as-is because the current asset pack is committed into `public/media`.
+
+If you want to swap in a new batch of assets on any computer, use one of these options:
 
 ```bash
-python3 "/Users/Devon/Pictures/only fans assets/build_onlyfans_parody_assets.py"
+npm run sync:assets -- /path/to/asset-folder
 ```
 
-Sync the latest generated assets into the website:
+```bash
+SOURCE_MEDIA_DIR=/path/to/asset-folder npm run sync:assets
+```
+
+Or create a local `seed-assets/` folder in the repo root and run:
 
 ```bash
 npm run sync:assets
 ```
+
+Inside the website itself, `Clip Studio` also supports uploading your own images directly from the browser, so clip generation is not tied to one machine.
 
 Build for production:
 
@@ -64,5 +72,5 @@ npm run build
 ## Notes
 
 - clip generation is browser-side and currently exports `.webm`
-- exported MP4 campaign teasers from the Python pipeline are still included in the media vault
-- the site avoids fake countdowns and invented launch claims on purpose
+- exported MP4 campaign teasers are included in the media vault
+- uploaded browser assets stay local to the current session unless you add them to the repo yourself
