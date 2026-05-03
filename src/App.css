@@ -670,10 +670,79 @@ video {
   margin-bottom: 14px;
 }
 
+.control-cluster {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.control-cluster h4,
+.scene-queue-header h4 {
+  margin: 0;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 1.3rem;
+  letter-spacing: 0.05em;
+  color: #f2d5a9;
+}
+
 .inline-controls {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+.inline-controls.triple,
+.scene-row-meta {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.preset-row,
+.toggle-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.preset-row {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.preset-chip,
+.scene-row-actions button {
+  min-height: 42px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--preset-accent, var(--line)) 42%, rgba(255, 255, 255, 0.06));
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.preset-chip:hover,
+.scene-row-actions button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--preset-accent, var(--amber)) 70%, transparent);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--preset-accent, var(--amber)) 22%, transparent);
+}
+
+.toggle-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  margin: 0;
+  padding: 0 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.toggle-row input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--pink);
 }
 
 .instruction-box {
@@ -712,6 +781,109 @@ video {
 .clip-preview video {
   border-radius: 16px;
   border: 1px solid var(--line-soft);
+}
+
+.clip-workbench,
+.scene-queue {
+  display: grid;
+  gap: 16px;
+}
+
+.scene-queue {
+  padding: 18px;
+  border: 1px solid var(--line-soft);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(12, 10, 8, 0.92), rgba(6, 5, 4, 0.96));
+}
+
+.scene-queue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.scene-queue-header span,
+.scene-empty,
+.scene-row-meta span {
+  color: var(--muted);
+  font-size: 0.84rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.scene-empty {
+  padding: 18px;
+  border: 1px dashed var(--line-soft);
+  border-radius: 14px;
+}
+
+.scene-list {
+  display: grid;
+  gap: 12px;
+}
+
+.scene-row {
+  display: grid;
+  grid-template-columns: 124px minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.scene-row-media {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  aspect-ratio: 0.82;
+  background: #120d0a;
+}
+
+.scene-row-media img {
+  height: 100%;
+  object-fit: cover;
+}
+
+.scene-row-media span {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: rgba(5, 4, 3, 0.88);
+  color: #fff0de;
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.scene-row-copy {
+  display: grid;
+  gap: 12px;
+}
+
+.scene-row-copy input {
+  min-height: 48px;
+  border-radius: 12px;
+  border: 1px solid var(--line-soft);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  padding: 0 14px;
+}
+
+.scene-row-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.scene-row-actions button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 .clip-options {
@@ -792,6 +964,12 @@ video {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .toggle-grid,
+  .preset-row,
+  .scene-row-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .generator-steps {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -843,5 +1021,17 @@ video {
 
   .feature-card {
     grid-template-columns: 1fr;
+  }
+
+  .inline-controls.triple,
+  .toggle-grid,
+  .preset-row,
+  .scene-row,
+  .scene-row-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .scene-row-actions {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }

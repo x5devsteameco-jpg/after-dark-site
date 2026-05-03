@@ -8,6 +8,8 @@ Cross Border x Legacy `After Dark Uncensored` is a Vite + React microsite that t
 - highlights featured products and promo creative
 - exposes exported teaser clips and storyboard sheets
 - generates new short-form teaser clips directly in the browser with `MediaRecorder`
+- supports scene queue editing, reordering, duplication, and per-scene emphasis
+- supports style presets, transition tuning, motion tuning, overlay modes, and title treatments
 - keeps the site deployable as a static Vercel project with no backend required
 
 ## Project Structure
@@ -29,10 +31,12 @@ Open the local site and use it like this:
 
 1. Browse the `Media Vault` to review available assets.
 2. Open `Clip Lab`.
-3. Select up to four visuals.
-4. Set a headline, subhead, duration, and accent color.
-5. Click `Generate clip`.
-6. Preview and download the generated `.webm` teaser.
+3. Build a scene queue from the built-in library or your own uploaded images.
+4. Reorder, duplicate, relabel, and weight scenes to control pacing.
+5. Choose output format, duration, quality, FPS, transitions, motion, overlays, and title style.
+6. Apply a studio preset or override individual scenes for a more custom sequence.
+7. Click `Generate clip`.
+8. Preview and download the generated `.webm` teaser.
 
 ## Asset Workflow
 
@@ -68,6 +72,7 @@ npm run build
 - `npm run build`
 - verify the hero, vault, storyboard, and clip sections load correctly
 - verify `Clip Lab` creates a preview and exposes a working download link
+- verify queue edits, presets, transitions, and per-scene motion overrides work in-browser
 
 ## Notes
 
