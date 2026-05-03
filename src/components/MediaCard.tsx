@@ -8,7 +8,7 @@ type Props = {
 }
 
 export function MediaCard({ item, selectable, selected, onToggle }: Props) {
-  const isVideo = item.kind === 'video'
+  const isVideo = item.kind === 'video' || item.src.toLowerCase().endsWith('.mp4')
 
   return (
     <article

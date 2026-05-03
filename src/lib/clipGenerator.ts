@@ -9,7 +9,13 @@ export type ClipTransition =
   | 'dip-black'
   | 'iris'
   | 'none'
-export type ClipMotion = 'gentle-zoom' | 'push-in' | 'pan-left' | 'pan-right' | 'float-up' | 'static'
+export type ClipMotion =
+  | 'gentle-zoom'
+  | 'push-in'
+  | 'pan-left'
+  | 'pan-right'
+  | 'float-up'
+  | 'static'
 export type ClipOverlay = 'after-dark' | 'glass' | 'clean' | 'none'
 export type ClipTitleStyle = 'neon' | 'minimal' | 'bold'
 export type ClipQuality = 'standard' | 'high'
@@ -21,6 +27,9 @@ export type ClipScene = {
   weight: number
   accent: string
   motion?: ClipMotion
+  transition?: ClipTransition
+  trimStart?: number
+  trimEnd?: number
 }
 
 export type ClipSettings = {
@@ -48,6 +57,20 @@ type Dimensions = {
   height: number
 }
 
+type LoadedScene = {
+  scene: ClipScene
+  kind: 'image' | 'video'
+  source: HTMLImageElement | HTMLVideoElement
+  sourceDuration: number
+  lastSeekTime?: number
+}
+
+type SceneSpan = {
+  start: number
+  end: number
+  duration: number
+}
+
 const FORMAT_DIMENSIONS: Record<ClipFormat, Dimensions> = {
   story: { width: 1080, height: 1920 },
   square: { width: 1080, height: 1080 },
@@ -57,17 +80,6 @@ const FORMAT_DIMENSIONS: Record<ClipFormat, Dimensions> = {
 const QUALITY_BITRATE: Record<ClipQuality, number> = {
   standard: 5_500_000,
   high: 9_000_000,
-}
-
-type LoadedScene = {
-  scene: ClipScene
-  image: HTMLImageElement
-}
-
-type SceneSpan = {
-  start: number
-  end: number
-  duration: number
 }
 
 function wait(ms: number) {
@@ -87,9 +99,67 @@ function loadImage(src: string): Promise<HTMLImageElement> {
     const image = new Image()
     image.crossOrigin = 'anonymous'
     image.onload = () => resolve(image)
-    image.onerror = reject
+    image.onerror = () => reject(new Error(`Image could not be loaded: ${src}`))
     image.src = src
   })
+}
+
+function loadVideo(src: string): Promise<HTMLVideoElement> {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video')
+    video.crossOrigin = 'anonymous'
+    video.muted = true
+    video.playsInline = true
+    video.preload = 'auto'
+
+    const cleanup = () => {
+      video.onloadedmetadata = null
+      video.oncanplay = null
+      video.onerror = null
+    }
+
+    video.onloadedmetadata = () => {
+      video.currentTime = 0
+    }
+
+    video.oncanplay = () => {
+      cleanup()
+      resolve(video)
+    }
+
+    video.onerror = () => {
+      cleanup()
+      reject(new Error(`Video could not be loaded: ${src}`))
+    }
+
+    video.src = src
+    video.load()
+  })
+}
+
+function isVideoItem(item: MediaItem) {
+  return item.kind === 'video' || item.src.toLowerCase().endsWith('.mp4')
+}
+
+async function loadSceneSource(scene: ClipScene): Promise<LoadedScene> {
+  if (isVideoItem(scene.item)) {
+    const source = await loadVideo(scene.item.src)
+    return {
+      scene,
+      kind: 'video',
+      source,
+      sourceDuration: Number.isFinite(source.duration) && source.duration > 0 ? source.duration : 1,
+      lastSeekTime: -1,
+    }
+  }
+
+  const source = await loadImage(scene.item.poster ?? scene.item.src)
+  return {
+    scene,
+    kind: 'image',
+    source,
+    sourceDuration: 1,
+  }
 }
 
 function getDimensions(format: ClipFormat) {
@@ -137,16 +207,16 @@ function getMotionTransform(
 
 function drawCoverImage(
   ctx: CanvasRenderingContext2D,
-  image: CanvasImageSource,
+  source: CanvasImageSource,
   dims: Dimensions,
   motion: ClipMotion,
   localProgress: number,
   alpha = 1,
 ) {
-  const source =
-    image instanceof HTMLImageElement || image instanceof HTMLVideoElement ? image : null
-  const srcW = source?.width ?? dims.width
-  const srcH = source?.height ?? dims.height
+  const input =
+    source instanceof HTMLImageElement || source instanceof HTMLVideoElement ? source : null
+  const srcW = input instanceof HTMLVideoElement ? input.videoWidth : input?.width ?? dims.width
+  const srcH = input instanceof HTMLVideoElement ? input.videoHeight : input?.height ?? dims.height
   const srcRatio = srcW / srcH
   const destRatio = dims.width / dims.height
   const transform = getMotionTransform(motion, localProgress)
@@ -167,7 +237,7 @@ function drawCoverImage(
 
   ctx.save()
   ctx.globalAlpha = alpha
-  ctx.drawImage(image, x, y, drawW, drawH)
+  ctx.drawImage(source, x, y, drawW, drawH)
   ctx.restore()
 }
 
@@ -285,85 +355,115 @@ function drawTitleBlock(
   }
 }
 
+function getSceneTransition(scene: ClipScene, fallback: ClipTransition) {
+  return scene.transition ?? fallback
+}
+
+function getSceneTrim(scene: ClipScene) {
+  const start = clamp(scene.trimStart ?? 0, 0, 0.96)
+  const end = clamp(scene.trimEnd ?? 1, start + 0.04, 1)
+  return { start, end }
+}
+
+function getSceneSourceProgress(scene: ClipScene, localProgress: number) {
+  const trim = getSceneTrim(scene)
+  return trim.start + (trim.end - trim.start) * clamp(localProgress)
+}
+
+async function seekVideo(source: HTMLVideoElement, time: number) {
+  if (!Number.isFinite(source.duration) || source.duration <= 0) return
+
+  const maxTime = Math.max(0, source.duration - 0.04)
+  const target = clamp(time, 0, maxTime)
+
+  if (Math.abs(source.currentTime - target) < 1 / 60) {
+    return
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      source.onseeked = null
+      source.onerror = null
+    }
+
+    source.onseeked = () => {
+      cleanup()
+      resolve()
+    }
+
+    source.onerror = () => {
+      cleanup()
+      reject(new Error('Video seeking failed.'))
+    }
+
+    source.currentTime = target
+  })
+}
+
+async function prepareSourceFrame(loaded: LoadedScene, sourceProgress: number) {
+  if (loaded.kind !== 'video') return
+
+  const absoluteTime = loaded.sourceDuration * clamp(sourceProgress)
+  if (loaded.lastSeekTime !== undefined && Math.abs(loaded.lastSeekTime - absoluteTime) < 1 / 60) {
+    return
+  }
+
+  const videoSource = loaded.source as HTMLVideoElement
+  await seekVideo(videoSource, absoluteTime)
+  loaded.lastSeekTime = absoluteTime
+}
+
 function drawTransitionFrame(
   ctx: CanvasRenderingContext2D,
   current: LoadedScene,
   next: LoadedScene,
   dims: Dimensions,
-  settings: ClipSettings,
-  localProgress: number,
+  transition: ClipTransition,
+  globalMotion: ClipMotion,
+  currentLocalProgress: number,
+  nextLocalProgress: number,
   transitionProgress: number,
 ) {
   const t = clamp(transitionProgress)
+  const currentMotion = current.scene.motion ?? globalMotion
+  const nextMotion = next.scene.motion ?? globalMotion
 
-  if (settings.transition === 'none') {
-    drawCoverImage(
-      ctx,
-      current.image,
-      dims,
-      current.scene.motion ?? settings.motion,
-      localProgress,
-    )
+  if (transition === 'none') {
+    drawCoverImage(ctx, current.source, dims, currentMotion, currentLocalProgress)
     return
   }
 
-  if (settings.transition === 'crossfade') {
-    drawCoverImage(
-      ctx,
-      current.image,
-      dims,
-      current.scene.motion ?? settings.motion,
-      localProgress,
-      1 - t,
-    )
-    drawCoverImage(ctx, next.image, dims, next.scene.motion ?? settings.motion, 0, t)
+  if (transition === 'crossfade') {
+    drawCoverImage(ctx, current.source, dims, currentMotion, currentLocalProgress, 1 - t)
+    drawCoverImage(ctx, next.source, dims, nextMotion, nextLocalProgress, t)
     return
   }
 
-  if (settings.transition === 'wipe-left') {
-    drawCoverImage(
-      ctx,
-      current.image,
-      dims,
-      current.scene.motion ?? settings.motion,
-      localProgress,
-    )
+  if (transition === 'wipe-left') {
+    drawCoverImage(ctx, current.source, dims, currentMotion, currentLocalProgress)
     ctx.save()
     ctx.beginPath()
     ctx.rect(dims.width * (1 - t), 0, dims.width * t, dims.height)
     ctx.clip()
-    drawCoverImage(ctx, next.image, dims, next.scene.motion ?? settings.motion, 0)
+    drawCoverImage(ctx, next.source, dims, nextMotion, nextLocalProgress)
     ctx.restore()
     return
   }
 
-  if (settings.transition === 'wipe-up') {
-    drawCoverImage(
-      ctx,
-      current.image,
-      dims,
-      current.scene.motion ?? settings.motion,
-      localProgress,
-    )
+  if (transition === 'wipe-up') {
+    drawCoverImage(ctx, current.source, dims, currentMotion, currentLocalProgress)
     ctx.save()
     ctx.beginPath()
     ctx.rect(0, dims.height * (1 - t), dims.width, dims.height * t)
     ctx.clip()
-    drawCoverImage(ctx, next.image, dims, next.scene.motion ?? settings.motion, 0)
+    drawCoverImage(ctx, next.source, dims, nextMotion, nextLocalProgress)
     ctx.restore()
     return
   }
 
-  if (settings.transition === 'flash') {
-    drawCoverImage(
-      ctx,
-      current.image,
-      dims,
-      current.scene.motion ?? settings.motion,
-      localProgress,
-      1 - t,
-    )
-    drawCoverImage(ctx, next.image, dims, next.scene.motion ?? settings.motion, 0, t)
+  if (transition === 'flash') {
+    drawCoverImage(ctx, current.source, dims, currentMotion, currentLocalProgress, 1 - t)
+    drawCoverImage(ctx, next.source, dims, nextMotion, nextLocalProgress, t)
     ctx.save()
     ctx.globalAlpha = Math.sin(t * Math.PI)
     ctx.fillStyle = 'rgba(255,255,255,0.45)'
@@ -372,18 +472,11 @@ function drawTransitionFrame(
     return
   }
 
-  if (settings.transition === 'dip-black') {
+  if (transition === 'dip-black') {
     const fadeOut = clamp(1 - t * 2)
     const fadeIn = clamp((t - 0.5) * 2)
-    drawCoverImage(
-      ctx,
-      current.image,
-      dims,
-      current.scene.motion ?? settings.motion,
-      localProgress,
-      fadeOut,
-    )
-    drawCoverImage(ctx, next.image, dims, next.scene.motion ?? settings.motion, 0, fadeIn)
+    drawCoverImage(ctx, current.source, dims, currentMotion, currentLocalProgress, fadeOut)
+    drawCoverImage(ctx, next.source, dims, nextMotion, nextLocalProgress, fadeIn)
     ctx.save()
     ctx.globalAlpha = t < 0.5 ? t * 1.6 : (1 - t) * 1.6
     ctx.fillStyle = 'black'
@@ -392,14 +485,8 @@ function drawTransitionFrame(
     return
   }
 
-  if (settings.transition === 'iris') {
-    drawCoverImage(
-      ctx,
-      current.image,
-      dims,
-      current.scene.motion ?? settings.motion,
-      localProgress,
-    )
+  if (transition === 'iris') {
+    drawCoverImage(ctx, current.source, dims, currentMotion, currentLocalProgress)
     ctx.save()
     ctx.beginPath()
     ctx.arc(
@@ -410,7 +497,7 @@ function drawTransitionFrame(
       Math.PI * 2,
     )
     ctx.clip()
-    drawCoverImage(ctx, next.image, dims, next.scene.motion ?? settings.motion, 0)
+    drawCoverImage(ctx, next.source, dims, nextMotion, nextLocalProgress)
     ctx.restore()
   }
 }
@@ -427,13 +514,7 @@ export async function generateClip(settings: ClipSettings): Promise<Blob> {
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('Canvas context could not be created.')
 
-  const scenes = await Promise.all(
-    settings.scenes.map(async (scene) => ({
-      scene,
-      image: await loadImage(scene.item.poster ?? scene.item.src),
-    })),
-  )
-
+  const scenes = await Promise.all(settings.scenes.map(loadSceneSource))
   const spans = computeSceneSpans(settings.scenes, settings.duration)
   const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
     ? 'video/webm;codecs=vp9'
@@ -455,78 +536,96 @@ export async function generateClip(settings: ClipSettings): Promise<Blob> {
   })
 
   recorder.start()
+  const frameDurationMs = 1000 / settings.fps
+  const totalFrames = Math.max(1, Math.ceil(settings.duration * settings.fps))
   const started = performance.now()
 
   try {
-    await new Promise<void>((resolve, reject) => {
-      const render = (timestamp: number) => {
-        try {
-          const elapsed = Math.max(0, (timestamp - started) / 1000)
-          const progress = clamp(elapsed / settings.duration)
-          const sceneIndex = spans.findIndex((span) => elapsed >= span.start && elapsed <= span.end)
-          const activeIndex = sceneIndex === -1 ? spans.length - 1 : sceneIndex
-          const currentSpan = spans[activeIndex]
-          const current = scenes[activeIndex]
-          const next = scenes[activeIndex + 1]
+    for (let frameIndex = 0; frameIndex <= totalFrames; frameIndex += 1) {
+      const elapsed = Math.min(settings.duration, frameIndex / settings.fps)
+      const progress = clamp(elapsed / settings.duration)
+      const sceneIndex = spans.findIndex(
+        (span, index) =>
+          elapsed >= span.start && (elapsed < span.end || index === spans.length - 1),
+      )
+      const activeIndex = sceneIndex === -1 ? spans.length - 1 : sceneIndex
+      const currentSpan = spans[activeIndex]
+      const current = scenes[activeIndex]
+      const next = scenes[activeIndex + 1]
 
-          if (!currentSpan || !current) {
-            throw new Error('Clip scene data is incomplete.')
-          }
-
-          const localElapsed = clamp((elapsed - currentSpan.start) / currentSpan.duration)
-          const transitionWindow = Math.min(settings.transitionDuration, currentSpan.duration * 0.45)
-          const timeUntilEnd = currentSpan.end - elapsed
-          const inTransition = Boolean(next) && settings.transition !== 'none' && timeUntilEnd <= transitionWindow
-          const transitionProgress = inTransition ? 1 - timeUntilEnd / transitionWindow : 0
-
-          ctx.clearRect(0, 0, dims.width, dims.height)
-
-          if (inTransition && next) {
-            drawTransitionFrame(
-              ctx,
-              current,
-              next,
-              dims,
-              settings,
-              localElapsed,
-              transitionProgress,
-            )
-          } else {
-            drawCoverImage(
-              ctx,
-              current.image,
-              dims,
-              current.scene.motion ?? settings.motion,
-              localElapsed,
-            )
-          }
-
-          const activeAccent = current.scene.accent || settings.accent
-          drawOverlay(ctx, dims, settings.overlay, activeAccent)
-          drawTitleBlock(ctx, dims, settings, current.scene.label, activeAccent)
-
-          if (settings.showProgress) {
-            drawProgress(ctx, dims, progress, activeAccent)
-          }
-
-          if (settings.showSafeFrame) {
-            drawSafeFrame(ctx, dims)
-          }
-
-          if (elapsed < settings.duration) {
-            requestAnimationFrame(render)
-          } else {
-            resolve()
-          }
-        } catch (error) {
-          reject(error instanceof Error ? error : new Error('Clip rendering failed.'))
-        }
+      if (!currentSpan || !current) {
+        throw new Error('Clip scene data is incomplete.')
       }
 
-      requestAnimationFrame(render)
-    })
+      const localProgress =
+        currentSpan.duration === 0
+          ? 0
+          : clamp((elapsed - currentSpan.start) / currentSpan.duration)
+      const currentSourceProgress = getSceneSourceProgress(current.scene, localProgress)
 
-    await wait(250)
+      const activeTransition = next ? getSceneTransition(current.scene, settings.transition) : 'none'
+      const transitionWindow = Math.min(settings.transitionDuration, currentSpan.duration * 0.45)
+      const timeUntilEnd = currentSpan.end - elapsed
+      const inTransition =
+        Boolean(next) &&
+        activeTransition !== 'none' &&
+        transitionWindow > 0 &&
+        timeUntilEnd <= transitionWindow
+      const transitionProgress = inTransition ? 1 - timeUntilEnd / transitionWindow : 0
+
+      await prepareSourceFrame(current, currentSourceProgress)
+
+      let nextLocalProgress = 0
+      if (next && inTransition) {
+        nextLocalProgress = clamp(transitionProgress * 0.8)
+        const nextSourceProgress = getSceneSourceProgress(next.scene, nextLocalProgress)
+        await prepareSourceFrame(next, nextSourceProgress)
+      }
+
+      ctx.clearRect(0, 0, dims.width, dims.height)
+
+      if (next && inTransition) {
+        drawTransitionFrame(
+          ctx,
+          current,
+          next,
+          dims,
+          activeTransition,
+          settings.motion,
+          localProgress,
+          nextLocalProgress,
+          transitionProgress,
+        )
+      } else {
+        drawCoverImage(
+          ctx,
+          current.source,
+          dims,
+          current.scene.motion ?? settings.motion,
+          localProgress,
+        )
+      }
+
+      const activeAccent = current.scene.accent || settings.accent
+      drawOverlay(ctx, dims, settings.overlay, activeAccent)
+      drawTitleBlock(ctx, dims, settings, current.scene.label, activeAccent)
+
+      if (settings.showProgress) {
+        drawProgress(ctx, dims, progress, activeAccent)
+      }
+
+      if (settings.showSafeFrame) {
+        drawSafeFrame(ctx, dims)
+      }
+
+      const targetTime = started + (frameIndex + 1) * frameDurationMs
+      const delay = targetTime - performance.now()
+      if (delay > 0) {
+        await wait(delay)
+      }
+    }
+
+    await wait(180)
   } finally {
     if (recorder.state !== 'inactive') recorder.stop()
   }

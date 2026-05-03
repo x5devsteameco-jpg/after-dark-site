@@ -29,6 +29,9 @@ type SceneDraft = {
   weight: number
   accent: string
   motion?: ClipMotion
+  transition?: ClipTransition
+  trimStart?: number
+  trimEnd?: number
 }
 
 const palette = [
@@ -81,6 +84,73 @@ const qualityOptions: Array<{ value: ClipQuality; label: string }> = [
   { value: 'high', label: 'High' },
 ]
 
+const exportPresets = [
+  {
+    name: 'OF Teaser',
+    format: 'story' as ClipFormat,
+    duration: 12,
+    fps: 30 as const,
+    quality: 'high' as ClipQuality,
+    transition: 'crossfade' as ClipTransition,
+    transitionDuration: 0.45,
+    motion: 'gentle-zoom' as ClipMotion,
+    overlay: 'after-dark' as ClipOverlay,
+    titleStyle: 'neon' as ClipTitleStyle,
+    showProgress: true,
+    showSceneTitle: true,
+    subtitle: 'Premium content. Exclusive access. Zero regrets.',
+    outroText: 'Unlock the next drop.',
+  },
+  {
+    name: 'IG Reel',
+    format: 'story' as ClipFormat,
+    duration: 15,
+    fps: 30 as const,
+    quality: 'high' as ClipQuality,
+    transition: 'wipe-left' as ClipTransition,
+    transitionDuration: 0.35,
+    motion: 'push-in' as ClipMotion,
+    overlay: 'glass' as ClipOverlay,
+    titleStyle: 'bold' as ClipTitleStyle,
+    showProgress: false,
+    showSceneTitle: true,
+    subtitle: 'Built for the scroll. Styled for the save.',
+    outroText: 'Tap in after dark.',
+  },
+  {
+    name: 'Story Burst',
+    format: 'story' as ClipFormat,
+    duration: 8,
+    fps: 30 as const,
+    quality: 'high' as ClipQuality,
+    transition: 'flash' as ClipTransition,
+    transitionDuration: 0.2,
+    motion: 'float-up' as ClipMotion,
+    overlay: 'clean' as ClipOverlay,
+    titleStyle: 'minimal' as ClipTitleStyle,
+    showProgress: false,
+    showSceneTitle: false,
+    subtitle: 'Fast cuts. Loud mood.',
+    outroText: 'Swipe up for more.',
+  },
+  {
+    name: 'Product Spotlight',
+    format: 'square' as ClipFormat,
+    duration: 10,
+    fps: 24 as const,
+    quality: 'high' as ClipQuality,
+    transition: 'dip-black' as ClipTransition,
+    transitionDuration: 0.6,
+    motion: 'static' as ClipMotion,
+    overlay: 'glass' as ClipOverlay,
+    titleStyle: 'bold' as ClipTitleStyle,
+    showProgress: false,
+    showSceneTitle: true,
+    subtitle: 'Clean framing. Premium finish.',
+    outroText: 'Feature the hero.',
+  },
+]
+
 const studioPresets = [
   {
     name: 'After Dark',
@@ -118,6 +188,8 @@ function createDraft(item: MediaItem): SceneDraft {
     label: item.title,
     weight: 2,
     accent: item.accent,
+    trimStart: 0,
+    trimEnd: 1,
   }
 }
 
@@ -169,6 +241,15 @@ export function ClipLab({ options }: Props) {
           if (draft.motion) {
             scene.motion = draft.motion
           }
+          if (draft.transition) {
+            scene.transition = draft.transition
+          }
+          if (draft.trimStart !== undefined) {
+            scene.trimStart = draft.trimStart
+          }
+          if (draft.trimEnd !== undefined) {
+            scene.trimEnd = draft.trimEnd
+          }
           return scene
         })
         .filter((scene): scene is ClipScene => scene !== null),
@@ -181,7 +262,7 @@ export function ClipLab({ options }: Props) {
       if (existingIndex >= 0) {
         return current.filter((scene) => scene.itemId !== item.id)
       }
-      if (current.length >= 8) return [...current.slice(1), createDraft(item)]
+      if (current.length >= 12) return [...current.slice(1), createDraft(item)]
       return [...current, createDraft(item)]
     })
   }
@@ -221,6 +302,24 @@ export function ClipLab({ options }: Props) {
       next.splice(index + 1, 0, clone)
       return next.slice(0, 12)
     })
+  }
+
+  const applyExportPreset = (presetName: string) => {
+    const preset = exportPresets.find((item) => item.name === presetName)
+    if (!preset) return
+    setFormat(preset.format)
+    setDuration(preset.duration)
+    setFps(preset.fps)
+    setQuality(preset.quality)
+    setTransition(preset.transition)
+    setTransitionDuration(preset.transitionDuration)
+    setMotion(preset.motion)
+    setOverlay(preset.overlay)
+    setTitleStyle(preset.titleStyle)
+    setShowProgress(preset.showProgress)
+    setShowSceneTitle(preset.showSceneTitle)
+    setSubtitle(preset.subtitle)
+    setOutroText(preset.outroText)
   }
 
   const applyPreset = (presetName: string) => {
@@ -276,22 +375,23 @@ export function ClipLab({ options }: Props) {
     const files = Array.from(event.target.files ?? [])
     if (files.length === 0) return
 
-    const incoming = files
-      .filter((file) => file.type.startsWith('image/'))
+    const incoming: MediaItem[] = files
+      .filter((file) => file.type.startsWith('image/') || file.type.startsWith('video/'))
       .slice(0, 16)
       .map((file, index) => ({
         id: `upload-${file.name}-${index}-${Date.now()}`,
         title: file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' '),
-        subtitle: 'Uploaded image',
+        subtitle: file.type.startsWith('video/') ? 'Uploaded video clip' : 'Uploaded image',
         src: URL.createObjectURL(file),
-        kind: 'photo' as const,
+        kind: file.type.startsWith('video/') ? 'video' : 'photo',
+        poster: file.type.startsWith('video/') ? undefined : undefined,
         accent: palette[index % palette.length].value,
       }))
 
     setUploadedMedia((current) => [...incoming, ...current].slice(0, 16))
     setSceneQueue((current) => {
       const next = [...incoming.map(createDraft), ...current]
-      return next.slice(0, 8)
+      return next.slice(0, 12)
     })
     event.target.value = ''
   }
@@ -344,6 +444,18 @@ export function ClipLab({ options }: Props) {
 
           <div className="control-cluster">
             <h4>Output Preset</h4>
+            <div className="preset-row export-preset-row">
+              {exportPresets.map((preset) => (
+                <button
+                  key={preset.name}
+                  type="button"
+                  className="preset-chip export-preset-chip"
+                  onClick={() => applyExportPreset(preset.name)}
+                >
+                  {preset.name}
+                </button>
+              ))}
+            </div>
             <div className="inline-controls triple">
               <label>
                 <span>Format</span>
@@ -495,15 +607,15 @@ export function ClipLab({ options }: Props) {
             <strong>Enhancement Loop</strong>
             <ol>
               <li>Build a queue from the library or your own uploads.</li>
-              <li>Reorder scenes and tune emphasis to control timing.</li>
-              <li>Adjust transition, motion, overlay, and title style.</li>
+              <li>Trim clips, reorder scenes, and tune emphasis to control timing.</li>
+              <li>Adjust scene-level transitions, motion, overlays, and title style.</li>
               <li>Generate, review, refine, and export again.</li>
             </ol>
           </div>
 
           <label>
             <span>Bring your own assets</span>
-            <input type="file" accept="image/*" multiple onChange={handleUpload} />
+            <input type="file" accept="image/*,video/*" multiple onChange={handleUpload} />
           </label>
 
           <button className="generate-button" disabled={isGenerating} onClick={handleGenerate}>
@@ -549,6 +661,9 @@ export function ClipLab({ options }: Props) {
                           onChange={(event) => updateScene(scene.id, { label: event.target.value })}
                           maxLength={32}
                         />
+                        <div className="scene-row-kind">
+                          <span>{item.kind === 'video' ? 'Video clip' : 'Still frame'}</span>
+                        </div>
                         <div className="scene-row-meta">
                           <label>
                             <span>Emphasis</span>
@@ -599,7 +714,69 @@ export function ClipLab({ options }: Props) {
                               ))}
                             </select>
                           </label>
+                          <label>
+                            <span>Next Transition</span>
+                            <select
+                              value={scene.transition ?? 'inherit'}
+                              onChange={(event) =>
+                                updateScene(scene.id, {
+                                  transition:
+                                    event.target.value === 'inherit'
+                                      ? undefined
+                                      : (event.target.value as ClipTransition),
+                                })
+                              }
+                            >
+                              <option value="inherit">Match global</option>
+                              {transitionOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
                         </div>
+                        {item.kind === 'video' ? (
+                          <div className="scene-trim-panel">
+                            <div className="trim-control">
+                              <div className="trim-labels">
+                                <span>Trim In</span>
+                                <strong>{Math.round((scene.trimStart ?? 0) * 100)}%</strong>
+                              </div>
+                              <input
+                                type="range"
+                                min={0}
+                                max={95}
+                                step={1}
+                                value={Math.round((scene.trimStart ?? 0) * 100)}
+                                onChange={(event) => {
+                                  const nextStart = Number(event.target.value) / 100
+                                  const safeEnd = Math.max(nextStart + 0.05, scene.trimEnd ?? 1)
+                                  updateScene(scene.id, { trimStart: nextStart, trimEnd: safeEnd })
+                                }}
+                              />
+                            </div>
+                            <div className="trim-control">
+                              <div className="trim-labels">
+                                <span>Trim Out</span>
+                                <strong>{Math.round((scene.trimEnd ?? 1) * 100)}%</strong>
+                              </div>
+                              <input
+                                type="range"
+                                min={5}
+                                max={100}
+                                step={1}
+                                value={Math.round((scene.trimEnd ?? 1) * 100)}
+                                onChange={(event) => {
+                                  const nextEnd = Number(event.target.value) / 100
+                                  const safeStart = Math.min(scene.trimStart ?? 0, nextEnd - 0.05)
+                                  updateScene(scene.id, { trimStart: safeStart, trimEnd: nextEnd })
+                                }}
+                              />
+                            </div>
+                            <p>Timeline handles control which slice of the source clip gets stitched in.</p>
+                          </div>
+                        ) : null}
                       </div>
                       <div className="scene-row-actions">
                         <button onClick={() => moveScene(scene.id, -1)} disabled={index === 0}>
