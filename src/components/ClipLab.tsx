@@ -13,6 +13,7 @@ import {
   type ClipOverlay,
   type ClipQuality,
   type ClipScene,
+  type ClipSceneKind,
   type ClipTitleStyle,
   type ClipTransition,
 } from '../lib/clipGenerator'
@@ -24,8 +25,11 @@ type Props = {
 
 type SceneDraft = {
   id: string
-  itemId: string
+  kind: ClipSceneKind
+  itemId?: string
   label: string
+  body?: string
+  ctaLabel?: string
   weight: number
   accent: string
   motion?: ClipMotion
@@ -33,6 +37,40 @@ type SceneDraft = {
   trimStart?: number
   trimEnd?: number
 }
+
+type SavedPreset = {
+  id: string
+  name: string
+  createdAt: string
+  settings: {
+    format: ClipFormat
+    duration: number
+    fps: 24 | 30
+    quality: ClipQuality
+    transition: ClipTransition
+    transitionDuration: number
+    motion: ClipMotion
+    overlay: ClipOverlay
+    titleStyle: ClipTitleStyle
+    showSceneTitle: boolean
+    showProgress: boolean
+    showSafeFrame: boolean
+    subtitle: string
+    outroText: string
+  }
+}
+
+type ExportHistoryEntry = {
+  id: string
+  createdAt: string
+  title: string
+  format: ClipFormat
+  duration: number
+  sceneCount: number
+}
+
+const SAVED_PRESETS_KEY = 'after-dark-saved-presets-v2'
+const EXPORT_HISTORY_KEY = 'after-dark-export-history-v2'
 
 const palette = [
   { name: 'Neon Pink', value: '#ff5aa4' },
@@ -181,11 +219,17 @@ const studioPresets = [
   },
 ]
 
+function createId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
 function createDraft(item: MediaItem): SceneDraft {
   return {
-    id: `${item.id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    id: createId(item.id),
+    kind: 'media',
     itemId: item.id,
     label: item.title,
+    body: item.subtitle,
     weight: 2,
     accent: item.accent,
     trimStart: 0,
@@ -193,11 +237,77 @@ function createDraft(item: MediaItem): SceneDraft {
   }
 }
 
+function createCardDraft(kind: 'text' | 'cta', accent: string): SceneDraft {
+  return {
+    id: createId(kind),
+    kind,
+    label: kind === 'cta' ? 'Unlock the Drop' : 'Tonight’s Feature',
+    body:
+      kind === 'cta'
+        ? 'Subscriber-only access. Premium content. Zero regrets.'
+        : 'Insert a clean text beat between product scenes to pace the reel.',
+    ctaLabel: kind === 'cta' ? 'UNLOCK ACCESS' : '',
+    weight: 2,
+    accent,
+    trimStart: 0,
+    trimEnd: 1,
+  }
+}
+
+function readStoredJson<T>(key: string, fallback: T): T {
+  if (typeof window === 'undefined') return fallback
+  try {
+    const raw = window.localStorage.getItem(key)
+    return raw ? (JSON.parse(raw) as T) : fallback
+  } catch {
+    return fallback
+  }
+}
+
+async function createVideoPoster(src: string): Promise<string | undefined> {
+  const video = document.createElement('video')
+  video.muted = true
+  video.playsInline = true
+  video.preload = 'metadata'
+  video.src = src
+
+  return new Promise((resolve) => {
+    const cleanup = () => {
+      video.onloadeddata = null
+      video.onerror = null
+    }
+
+    video.onloadeddata = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.max(1, video.videoWidth || 720)
+      canvas.height = Math.max(1, video.videoHeight || 1280)
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        cleanup()
+        resolve(undefined)
+        return
+      }
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+      cleanup()
+      resolve(canvas.toDataURL('image/jpeg', 0.82))
+    }
+
+    video.onerror = () => {
+      cleanup()
+      resolve(undefined)
+    }
+
+    video.load()
+  })
+}
+
 export function ClipLab({ options }: Props) {
   const [uploadedMedia, setUploadedMedia] = useState<MediaItem[]>([])
   const [sceneQueue, setSceneQueue] = useState<SceneDraft[]>(() =>
     options.slice(0, 4).map(createDraft),
   )
+  const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null)
+  const [draggedSceneId, setDraggedSceneId] = useState<string | null>(null)
   const [title, setTitle] = useState('Tonight’s Features')
   const [subtitle, setSubtitle] = useState('Cherry Limeade. The Rolled Fashioned. Slurricane.')
   const [outroText, setOutroText] = useState('Premium content. Exclusive access. Zero regrets.')
@@ -213,6 +323,13 @@ export function ClipLab({ options }: Props) {
   const [showSceneTitle, setShowSceneTitle] = useState(true)
   const [showProgress, setShowProgress] = useState(true)
   const [showSafeFrame, setShowSafeFrame] = useState(false)
+  const [customPresetName, setCustomPresetName] = useState('')
+  const [savedPresets, setSavedPresets] = useState<SavedPreset[]>(() =>
+    readStoredJson<SavedPreset[]>(SAVED_PRESETS_KEY, []),
+  )
+  const [exportHistory, setExportHistory] = useState<ExportHistoryEntry[]>(() =>
+    readStoredJson<ExportHistoryEntry[]>(EXPORT_HISTORY_KEY, []),
+  )
   const [isGenerating, setIsGenerating] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -223,67 +340,97 @@ export function ClipLab({ options }: Props) {
     [allOptions],
   )
 
-  const selectedIds = useMemo(() => sceneQueue.map((scene) => scene.itemId), [sceneQueue])
-
-  const queueScenes = useMemo<ClipScene[]>(
+  const selectedIds = useMemo(
     () =>
       sceneQueue
-        .map((draft) => {
-          const item = mediaMap.get(draft.itemId)
-          if (!item) return null
-          const scene: ClipScene = {
+        .filter((scene) => scene.kind === 'media' && scene.itemId)
+        .map((scene) => scene.itemId as string),
+    [sceneQueue],
+  )
+
+  const queueScenes = useMemo<ClipScene[]>(
+    () => {
+      const scenes: ClipScene[] = []
+
+      for (const draft of sceneQueue) {
+        if (draft.kind === 'media') {
+          const item = draft.itemId ? mediaMap.get(draft.itemId) : null
+          if (!item) continue
+          scenes.push({
             id: draft.id,
+            kind: draft.kind,
             item,
             label: draft.label,
+            body: draft.body,
+            ctaLabel: draft.ctaLabel,
             weight: draft.weight,
             accent: draft.accent,
-          }
-          if (draft.motion) {
-            scene.motion = draft.motion
-          }
-          if (draft.transition) {
-            scene.transition = draft.transition
-          }
-          if (draft.trimStart !== undefined) {
-            scene.trimStart = draft.trimStart
-          }
-          if (draft.trimEnd !== undefined) {
-            scene.trimEnd = draft.trimEnd
-          }
-          return scene
+            motion: draft.motion,
+            transition: draft.transition,
+            trimStart: draft.trimStart,
+            trimEnd: draft.trimEnd,
+          })
+          continue
+        }
+
+        scenes.push({
+          id: draft.id,
+          kind: draft.kind,
+          label: draft.label,
+          body: draft.body,
+          ctaLabel: draft.ctaLabel,
+          weight: draft.weight,
+          accent: draft.accent,
+          motion: draft.motion,
+          transition: draft.transition,
         })
-        .filter((scene): scene is ClipScene => scene !== null),
+      }
+
+      return scenes
+    },
     [mediaMap, sceneQueue],
   )
 
-  const toggle = (item: MediaItem) => {
-    setSceneQueue((current) => {
-      const existingIndex = current.findIndex((scene) => scene.itemId === item.id)
-      if (existingIndex >= 0) {
-        return current.filter((scene) => scene.itemId !== item.id)
-      }
-      if (current.length >= 12) return [...current.slice(1), createDraft(item)]
-      return [...current, createDraft(item)]
-    })
-  }
+  const resolvedSelectedSceneId =
+    selectedSceneId && sceneQueue.some((scene) => scene.id === selectedSceneId)
+      ? selectedSceneId
+      : sceneQueue[0]?.id ?? null
+
+  const selectedScene = useMemo(
+    () => sceneQueue.find((scene) => scene.id === resolvedSelectedSceneId) ?? null,
+    [resolvedSelectedSceneId, sceneQueue],
+  )
+
+  const selectedMedia =
+    selectedScene?.kind === 'media' && selectedScene.itemId
+      ? mediaMap.get(selectedScene.itemId)
+      : undefined
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(SAVED_PRESETS_KEY, JSON.stringify(savedPresets))
+  }, [savedPresets])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(EXPORT_HISTORY_KEY, JSON.stringify(exportHistory))
+  }, [exportHistory])
+
+  useEffect(() => {
+    return () => {
+      uploadedMedia.forEach((item) => {
+        if (item.id.startsWith('upload-')) {
+          URL.revokeObjectURL(item.src)
+        }
+      })
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
+    }
+  }, [previewUrl, uploadedMedia])
 
   const updateScene = (id: string, patch: Partial<SceneDraft>) => {
     setSceneQueue((current) =>
       current.map((scene) => (scene.id === id ? { ...scene, ...patch } : scene)),
     )
-  }
-
-  const moveScene = (id: string, direction: -1 | 1) => {
-    setSceneQueue((current) => {
-      const index = current.findIndex((scene) => scene.id === id)
-      if (index < 0) return current
-      const nextIndex = index + direction
-      if (nextIndex < 0 || nextIndex >= current.length) return current
-      const next = [...current]
-      const [scene] = next.splice(index, 1)
-      next.splice(nextIndex, 0, scene)
-      return next
-    })
   }
 
   const removeScene = (id: string) => {
@@ -296,17 +443,44 @@ export function ClipLab({ options }: Props) {
       if (index < 0) return current
       const clone = {
         ...current[index],
-        id: `${current[index].itemId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        id: createId(current[index].kind),
       }
       const next = [...current]
       next.splice(index + 1, 0, clone)
-      return next.slice(0, 12)
+      return next.slice(0, 16)
     })
   }
 
-  const applyExportPreset = (presetName: string) => {
-    const preset = exportPresets.find((item) => item.name === presetName)
-    if (!preset) return
+  const reorderScene = (sourceId: string, targetId: string) => {
+    setSceneQueue((current) => {
+      const sourceIndex = current.findIndex((scene) => scene.id === sourceId)
+      const targetIndex = current.findIndex((scene) => scene.id === targetId)
+      if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return current
+      const next = [...current]
+      const [source] = next.splice(sourceIndex, 1)
+      next.splice(targetIndex, 0, source)
+      return next
+    })
+  }
+
+  const toggle = (item: MediaItem) => {
+    setSceneQueue((current) => {
+      const exists = current.some((scene) => scene.kind === 'media' && scene.itemId === item.id)
+      if (exists) {
+        return current.filter((scene) => !(scene.kind === 'media' && scene.itemId === item.id))
+      }
+      if (current.length >= 16) return [...current.slice(1), createDraft(item)]
+      return [...current, createDraft(item)]
+    })
+  }
+
+  const addCardScene = (kind: 'text' | 'cta') => {
+    const draft = createCardDraft(kind, palette[kind === 'cta' ? 0 : 1].value)
+    setSceneQueue((current) => [...current, draft].slice(0, 16))
+    setSelectedSceneId(draft.id)
+  }
+
+  const applyExportPreset = (preset: SavedPreset['settings'] | (typeof exportPresets)[number]) => {
     setFormat(preset.format)
     setDuration(preset.duration)
     setFps(preset.fps)
@@ -322,7 +496,7 @@ export function ClipLab({ options }: Props) {
     setOutroText(preset.outroText)
   }
 
-  const applyPreset = (presetName: string) => {
+  const applyStudioPreset = (presetName: string) => {
     const preset = studioPresets.find((item) => item.name === presetName)
     if (!preset) return
     setTransition(preset.transition)
@@ -332,9 +506,47 @@ export function ClipLab({ options }: Props) {
     setSubtitle(preset.subtitle)
   }
 
+  const saveCurrentPreset = () => {
+    const name = customPresetName.trim()
+    if (!name) {
+      setError('Give your preset a name before saving it.')
+      return
+    }
+
+    const nextPreset: SavedPreset = {
+      id: createId('preset'),
+      name,
+      createdAt: new Date().toISOString(),
+      settings: {
+        format,
+        duration,
+        fps,
+        quality,
+        transition,
+        transitionDuration,
+        motion,
+        overlay,
+        titleStyle,
+        showSceneTitle,
+        showProgress,
+        showSafeFrame,
+        subtitle,
+        outroText,
+      },
+    }
+
+    setSavedPresets((current) => [nextPreset, ...current].slice(0, 8))
+    setCustomPresetName('')
+    setError(null)
+  }
+
+  const deleteSavedPreset = (id: string) => {
+    setSavedPresets((current) => current.filter((preset) => preset.id !== id))
+  }
+
   const handleGenerate = async () => {
     if (queueScenes.length === 0) {
-      setError('Choose at least one media asset for the clip.')
+      setError('Choose at least one scene for the clip.')
       return
     }
 
@@ -364,6 +576,17 @@ export function ClipLab({ options }: Props) {
 
       if (previewUrl) URL.revokeObjectURL(previewUrl)
       setPreviewUrl(URL.createObjectURL(blob))
+      setExportHistory((current) => [
+        {
+          id: createId('export'),
+          createdAt: new Date().toISOString(),
+          title,
+          format,
+          duration,
+          sceneCount: queueScenes.length,
+        },
+        ...current,
+      ].slice(0, 8))
     } catch (generationError) {
       setError(generationError instanceof Error ? generationError.message : 'Clip generation failed.')
     } finally {
@@ -371,39 +594,39 @@ export function ClipLab({ options }: Props) {
     }
   }
 
-  const handleUpload = (event: ChangeEvent<HTMLInputElement>) => {
+  const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? [])
     if (files.length === 0) return
 
-    const incoming: MediaItem[] = files
-      .filter((file) => file.type.startsWith('image/') || file.type.startsWith('video/'))
-      .slice(0, 16)
-      .map((file, index) => ({
-        id: `upload-${file.name}-${index}-${Date.now()}`,
-        title: file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' '),
-        subtitle: file.type.startsWith('video/') ? 'Uploaded video clip' : 'Uploaded image',
-        src: URL.createObjectURL(file),
-        kind: file.type.startsWith('video/') ? 'video' : 'photo',
-        poster: file.type.startsWith('video/') ? undefined : undefined,
-        accent: palette[index % palette.length].value,
-      }))
+    const incoming = await Promise.all(
+      files
+        .filter((file) => file.type.startsWith('image/') || file.type.startsWith('video/'))
+        .slice(0, 16)
+        .map(async (file, index) => {
+          const src = URL.createObjectURL(file)
+          const isVideo = file.type.startsWith('video/')
+          const poster = isVideo ? await createVideoPoster(src) : undefined
+          const item: MediaItem = {
+            id: createId(`upload-${index}`),
+            title: file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' '),
+            subtitle: isVideo ? 'Uploaded video clip' : 'Uploaded image',
+            src,
+            poster,
+            kind: isVideo ? 'video' : 'photo',
+            accent: palette[index % palette.length].value,
+          }
+          return item
+        }),
+    )
 
-    setUploadedMedia((current) => [...incoming, ...current].slice(0, 16))
-    setSceneQueue((current) => {
-      const next = [...incoming.map(createDraft), ...current]
-      return next.slice(0, 12)
-    })
+    const drafts = incoming.map(createDraft)
+    setUploadedMedia((current) => [...incoming, ...current].slice(0, 24))
+    setSceneQueue((current) => [...drafts, ...current].slice(0, 16))
+    setSelectedSceneId(drafts[0]?.id ?? null)
     event.target.value = ''
   }
 
-  useEffect(() => {
-    return () => {
-      uploadedMedia.forEach((item) => {
-        if (item.id.startsWith('upload-')) URL.revokeObjectURL(item.src)
-      })
-      if (previewUrl) URL.revokeObjectURL(previewUrl)
-    }
-  }, [previewUrl, uploadedMedia])
+  const sceneCountLabel = `${sceneQueue.length} scenes`
 
   return (
     <section className="clip-lab-shell">
@@ -411,8 +634,8 @@ export function ClipLab({ options }: Props) {
         <span className="pill">Clip Lab</span>
         <h3>Generate premium teaser clips with real control</h3>
         <p>
-          Build a scene queue, reorder the flow, set emphasis, choose a transition language, tune
-          motion and overlays, then export a branded teaser directly in-browser.
+          Drag timeline strips, stitch stills with uploaded videos, inject text beats and CTA cards,
+          then save presets and export a branded teaser directly in-browser.
         </p>
       </div>
 
@@ -443,14 +666,14 @@ export function ClipLab({ options }: Props) {
           </div>
 
           <div className="control-cluster">
-            <h4>Output Preset</h4>
+            <h4>Export Modes</h4>
             <div className="preset-row export-preset-row">
               {exportPresets.map((preset) => (
                 <button
                   key={preset.name}
                   type="button"
                   className="preset-chip export-preset-chip"
-                  onClick={() => applyExportPreset(preset.name)}
+                  onClick={() => applyExportPreset(preset)}
                 >
                   {preset.name}
                 </button>
@@ -533,7 +756,7 @@ export function ClipLab({ options }: Props) {
                   key={preset.name}
                   type="button"
                   className="preset-chip"
-                  onClick={() => applyPreset(preset.name)}
+                  onClick={() => applyStudioPreset(preset.name)}
                   style={{ '--preset-accent': preset.accent } as CSSProperties}
                 >
                   {preset.name}
@@ -603,13 +826,49 @@ export function ClipLab({ options }: Props) {
             </div>
           </div>
 
+          <div className="control-cluster">
+            <h4>Save This Build</h4>
+            <div className="save-preset-row">
+              <input
+                value={customPresetName}
+                onChange={(event) => setCustomPresetName(event.target.value)}
+                placeholder="Name this preset"
+              />
+              <button type="button" className="preset-chip save-preset-button" onClick={saveCurrentPreset}>
+                Save preset
+              </button>
+            </div>
+            {savedPresets.length > 0 ? (
+              <div className="saved-preset-list">
+                {savedPresets.map((preset) => (
+                  <article key={preset.id} className="saved-preset-card">
+                    <button type="button" className="saved-preset-main" onClick={() => applyExportPreset(preset.settings)}>
+                      <strong>{preset.name}</strong>
+                      <span>{preset.settings.format} • {preset.settings.duration}s</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="saved-preset-delete"
+                      aria-label={`Delete ${preset.name}`}
+                      onClick={() => deleteSavedPreset(preset.id)}
+                    >
+                      ×
+                    </button>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="helper-copy">Save your favorite builds here for one-click reuse.</p>
+            )}
+          </div>
+
           <div className="instruction-box">
             <strong>Enhancement Loop</strong>
             <ol>
-              <li>Build a queue from the library or your own uploads.</li>
-              <li>Trim clips, reorder scenes, and tune emphasis to control timing.</li>
-              <li>Adjust scene-level transitions, motion, overlays, and title style.</li>
-              <li>Generate, review, refine, and export again.</li>
+              <li>Build the timeline from media, text cards, and CTA scenes.</li>
+              <li>Drag strips to reorder and use scene-level overrides where needed.</li>
+              <li>Trim uploaded clips to the best moment before stitching.</li>
+              <li>Generate, review, save a preset, then export again if needed.</li>
             </ol>
           </div>
 
@@ -632,164 +891,80 @@ export function ClipLab({ options }: Props) {
               </a>
             </div>
           ) : null}
+
+          <div className="control-cluster">
+            <h4>Export History</h4>
+            {exportHistory.length > 0 ? (
+              <div className="history-list">
+                {exportHistory.map((entry) => (
+                  <article key={entry.id} className="history-card">
+                    <strong>{entry.title}</strong>
+                    <span>{entry.format} • {entry.duration}s • {entry.sceneCount} scenes</span>
+                    <small>{new Date(entry.createdAt).toLocaleString()}</small>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="helper-copy">Your recent exports will show up here after generation.</p>
+            )}
+          </div>
         </aside>
 
         <div className="clip-workbench">
-          <div className="scene-queue">
+          <div className="scene-queue timeline-queue">
             <div className="scene-queue-header">
-              <h4>Scene Queue</h4>
-              <span>{queueScenes.length} scenes selected</span>
+              <div>
+                <h4>Timeline Builder</h4>
+                <span>{sceneCountLabel}</span>
+              </div>
+              <div className="timeline-toolbar">
+                <button type="button" className="preset-chip" onClick={() => addCardScene('text')}>
+                  Add Text Card
+                </button>
+                <button type="button" className="preset-chip" onClick={() => addCardScene('cta')}>
+                  Add CTA Card
+                </button>
+              </div>
             </div>
 
             {sceneQueue.length === 0 ? (
               <div className="scene-empty">Select assets below to start building your sequence.</div>
             ) : (
-              <div className="scene-list">
+              <div className="timeline-strip-list">
                 {sceneQueue.map((scene, index) => {
-                  const item = mediaMap.get(scene.itemId)
-                  if (!item) return null
+                  const media =
+                    scene.kind === 'media' && scene.itemId ? mediaMap.get(scene.itemId) : undefined
+                  const isSelected = selectedScene?.id === scene.id
+                  const thumb = media?.poster ?? media?.src
 
                   return (
-                    <article key={scene.id} className="scene-row">
-                      <div className="scene-row-media">
-                        <img src={item.poster ?? item.src} alt={item.title} />
+                    <article
+                      key={scene.id}
+                      className={`timeline-strip ${isSelected ? 'selected' : ''}`}
+                      style={
+                        {
+                          '--accent': scene.accent,
+                          '--strip-span': Math.max(1, scene.weight),
+                          flexBasis: `${160 + scene.weight * 38}px`,
+                        } as CSSProperties
+                      }
+                      draggable
+                      onDragStart={() => setDraggedSceneId(scene.id)}
+                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={() => {
+                        if (draggedSceneId) reorderScene(draggedSceneId, scene.id)
+                        setDraggedSceneId(null)
+                      }}
+                      onDragEnd={() => setDraggedSceneId(null)}
+                      onClick={() => setSelectedSceneId(scene.id)}
+                    >
+                      <div className="timeline-thumb">
+                        {thumb ? <img src={thumb} alt={scene.label} /> : <div className="timeline-card-art">{scene.kind.toUpperCase()}</div>}
                         <span>{index + 1}</span>
                       </div>
-                      <div className="scene-row-copy">
-                        <input
-                          value={scene.label}
-                          onChange={(event) => updateScene(scene.id, { label: event.target.value })}
-                          maxLength={32}
-                        />
-                        <div className="scene-row-kind">
-                          <span>{item.kind === 'video' ? 'Video clip' : 'Still frame'}</span>
-                        </div>
-                        <div className="scene-row-meta">
-                          <label>
-                            <span>Emphasis</span>
-                            <select
-                              value={scene.weight}
-                              onChange={(event) =>
-                                updateScene(scene.id, { weight: Number(event.target.value) })
-                              }
-                            >
-                              {[1, 2, 3, 4, 5].map((value) => (
-                                <option key={value} value={value}>
-                                  {value}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          <label>
-                            <span>Accent</span>
-                            <select
-                              value={scene.accent}
-                              onChange={(event) => updateScene(scene.id, { accent: event.target.value })}
-                            >
-                              {palette.map((swatch) => (
-                                <option key={swatch.value} value={swatch.value}>
-                                  {swatch.name}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          <label>
-                            <span>Motion</span>
-                            <select
-                              value={scene.motion ?? 'inherit'}
-                              onChange={(event) =>
-                                updateScene(scene.id, {
-                                  motion:
-                                    event.target.value === 'inherit'
-                                      ? undefined
-                                      : (event.target.value as ClipMotion),
-                                })
-                              }
-                            >
-                              <option value="inherit">Match global</option>
-                              {motionOptions.map((option) => (
-                                <option key={option.value} value={option.value}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          <label>
-                            <span>Next Transition</span>
-                            <select
-                              value={scene.transition ?? 'inherit'}
-                              onChange={(event) =>
-                                updateScene(scene.id, {
-                                  transition:
-                                    event.target.value === 'inherit'
-                                      ? undefined
-                                      : (event.target.value as ClipTransition),
-                                })
-                              }
-                            >
-                              <option value="inherit">Match global</option>
-                              {transitionOptions.map((option) => (
-                                <option key={option.value} value={option.value}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                        </div>
-                        {item.kind === 'video' ? (
-                          <div className="scene-trim-panel">
-                            <div className="trim-control">
-                              <div className="trim-labels">
-                                <span>Trim In</span>
-                                <strong>{Math.round((scene.trimStart ?? 0) * 100)}%</strong>
-                              </div>
-                              <input
-                                type="range"
-                                min={0}
-                                max={95}
-                                step={1}
-                                value={Math.round((scene.trimStart ?? 0) * 100)}
-                                onChange={(event) => {
-                                  const nextStart = Number(event.target.value) / 100
-                                  const safeEnd = Math.max(nextStart + 0.05, scene.trimEnd ?? 1)
-                                  updateScene(scene.id, { trimStart: nextStart, trimEnd: safeEnd })
-                                }}
-                              />
-                            </div>
-                            <div className="trim-control">
-                              <div className="trim-labels">
-                                <span>Trim Out</span>
-                                <strong>{Math.round((scene.trimEnd ?? 1) * 100)}%</strong>
-                              </div>
-                              <input
-                                type="range"
-                                min={5}
-                                max={100}
-                                step={1}
-                                value={Math.round((scene.trimEnd ?? 1) * 100)}
-                                onChange={(event) => {
-                                  const nextEnd = Number(event.target.value) / 100
-                                  const safeStart = Math.min(scene.trimStart ?? 0, nextEnd - 0.05)
-                                  updateScene(scene.id, { trimStart: safeStart, trimEnd: nextEnd })
-                                }}
-                              />
-                            </div>
-                            <p>Timeline handles control which slice of the source clip gets stitched in.</p>
-                          </div>
-                        ) : null}
-                      </div>
-                      <div className="scene-row-actions">
-                        <button onClick={() => moveScene(scene.id, -1)} disabled={index === 0}>
-                          ↑
-                        </button>
-                        <button
-                          onClick={() => moveScene(scene.id, 1)}
-                          disabled={index === sceneQueue.length - 1}
-                        >
-                          ↓
-                        </button>
-                        <button onClick={() => duplicateScene(scene.id)}>+</button>
-                        <button onClick={() => removeScene(scene.id)}>×</button>
+                      <div className="timeline-copy">
+                        <strong>{scene.label}</strong>
+                        <small>{scene.kind === 'media' ? media?.kind ?? 'media' : `${scene.kind} card`}</small>
                       </div>
                     </article>
                   )
@@ -797,6 +972,192 @@ export function ClipLab({ options }: Props) {
               </div>
             )}
           </div>
+
+          {selectedScene ? (
+            <div className="timeline-editor">
+              <div className="scene-queue-header">
+                <div>
+                  <h4>Scene Inspector</h4>
+                  <span>{selectedScene.kind === 'media' ? 'Media scene' : `${selectedScene.kind} card`}</span>
+                </div>
+                <div className="timeline-toolbar">
+                  <button type="button" className="preset-chip" onClick={() => duplicateScene(selectedScene.id)}>
+                    Duplicate
+                  </button>
+                  <button type="button" className="preset-chip destructive-chip" onClick={() => removeScene(selectedScene.id)}>
+                    Remove
+                  </button>
+                </div>
+              </div>
+
+              <div className="timeline-editor-grid">
+                <div className="timeline-editor-preview">
+                  {selectedScene.kind === 'media' && selectedMedia ? (
+                    selectedMedia.kind === 'video' ? (
+                      <video src={selectedMedia.src} poster={selectedMedia.poster} muted playsInline controls preload="metadata" />
+                    ) : (
+                      <img src={selectedMedia.poster ?? selectedMedia.src} alt={selectedScene.label} />
+                    )
+                  ) : (
+                    <div className={`generated-card-preview ${selectedScene.kind}`}>
+                      <span>{selectedScene.kind === 'cta' ? 'CTA' : 'TEXT'}</span>
+                      <strong>{selectedScene.label}</strong>
+                      <p>{selectedScene.body}</p>
+                      {selectedScene.kind === 'cta' ? <em>{selectedScene.ctaLabel || 'UNLOCK ACCESS'}</em> : null}
+                    </div>
+                  )}
+                </div>
+
+                <div className="timeline-editor-fields">
+                  <label>
+                    <span>Scene Title</span>
+                    <input
+                      value={selectedScene.label}
+                      onChange={(event) => updateScene(selectedScene.id, { label: event.target.value })}
+                      maxLength={40}
+                    />
+                  </label>
+
+                  {selectedScene.kind !== 'media' ? (
+                    <label>
+                      <span>Body Copy</span>
+                      <textarea
+                        value={selectedScene.body ?? ''}
+                        onChange={(event) => updateScene(selectedScene.id, { body: event.target.value })}
+                        rows={4}
+                      />
+                    </label>
+                  ) : null}
+
+                  {selectedScene.kind === 'cta' ? (
+                    <label>
+                      <span>CTA Label</span>
+                      <input
+                        value={selectedScene.ctaLabel ?? ''}
+                        onChange={(event) => updateScene(selectedScene.id, { ctaLabel: event.target.value })}
+                        maxLength={24}
+                      />
+                    </label>
+                  ) : null}
+
+                  <div className="scene-row-meta">
+                    <label>
+                      <span>Emphasis</span>
+                      <select
+                        value={selectedScene.weight}
+                        onChange={(event) =>
+                          updateScene(selectedScene.id, { weight: Number(event.target.value) })
+                        }
+                      >
+                        {[1, 2, 3, 4, 5].map((value) => (
+                          <option key={value} value={value}>
+                            {value}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Accent</span>
+                      <select
+                        value={selectedScene.accent}
+                        onChange={(event) => updateScene(selectedScene.id, { accent: event.target.value })}
+                      >
+                        {palette.map((swatch) => (
+                          <option key={swatch.value} value={swatch.value}>
+                            {swatch.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Motion</span>
+                      <select
+                        value={selectedScene.motion ?? 'inherit'}
+                        onChange={(event) =>
+                          updateScene(selectedScene.id, {
+                            motion:
+                              event.target.value === 'inherit'
+                                ? undefined
+                                : (event.target.value as ClipMotion),
+                          })
+                        }
+                      >
+                        <option value="inherit">Match global</option>
+                        {motionOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Next Transition</span>
+                      <select
+                        value={selectedScene.transition ?? 'inherit'}
+                        onChange={(event) =>
+                          updateScene(selectedScene.id, {
+                            transition:
+                              event.target.value === 'inherit'
+                                ? undefined
+                                : (event.target.value as ClipTransition),
+                          })
+                        }
+                      >
+                        <option value="inherit">Match global</option>
+                        {transitionOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  {selectedScene.kind === 'media' && selectedMedia?.kind === 'video' ? (
+                    <div className="scene-trim-panel">
+                      <div className="trim-control">
+                        <div className="trim-labels">
+                          <span>Trim In</span>
+                          <strong>{Math.round((selectedScene.trimStart ?? 0) * 100)}%</strong>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={95}
+                          step={1}
+                          value={Math.round((selectedScene.trimStart ?? 0) * 100)}
+                          onChange={(event) => {
+                            const nextStart = Number(event.target.value) / 100
+                            const safeEnd = Math.max(nextStart + 0.05, selectedScene.trimEnd ?? 1)
+                            updateScene(selectedScene.id, { trimStart: nextStart, trimEnd: safeEnd })
+                          }}
+                        />
+                      </div>
+                      <div className="trim-control">
+                        <div className="trim-labels">
+                          <span>Trim Out</span>
+                          <strong>{Math.round((selectedScene.trimEnd ?? 1) * 100)}%</strong>
+                        </div>
+                        <input
+                          type="range"
+                          min={5}
+                          max={100}
+                          step={1}
+                          value={Math.round((selectedScene.trimEnd ?? 1) * 100)}
+                          onChange={(event) => {
+                            const nextEnd = Number(event.target.value) / 100
+                            const safeStart = Math.min(selectedScene.trimStart ?? 0, nextEnd - 0.05)
+                            updateScene(selectedScene.id, { trimStart: safeStart, trimEnd: nextEnd })
+                          }}
+                        />
+                      </div>
+                      <p>Trim handles decide which slice of this source clip gets stitched into the export.</p>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           <div className="clip-options">
             {allOptions.map((item) => (

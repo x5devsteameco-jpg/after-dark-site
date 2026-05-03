@@ -9,6 +9,7 @@ type Props = {
 
 export function MediaCard({ item, selectable, selected, onToggle }: Props) {
   const isVideo = item.kind === 'video' || item.src.toLowerCase().endsWith('.mp4')
+  const showPosterCard = isVideo && Boolean(item.poster)
 
   return (
     <article
@@ -29,7 +30,12 @@ export function MediaCard({ item, selectable, selected, onToggle }: Props) {
       }
     >
       <div className="media-frame">
-        {isVideo ? (
+        {showPosterCard ? (
+          <div className="media-poster-card">
+            <img src={item.poster} alt={item.title} loading="lazy" />
+            <span className="media-play-badge">▶</span>
+          </div>
+        ) : isVideo ? (
           <video src={item.src} poster={item.poster} muted playsInline controls preload="metadata" />
         ) : (
           <img src={item.src} alt={item.title} loading="lazy" />

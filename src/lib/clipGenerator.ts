@@ -19,11 +19,15 @@ export type ClipMotion =
 export type ClipOverlay = 'after-dark' | 'glass' | 'clean' | 'none'
 export type ClipTitleStyle = 'neon' | 'minimal' | 'bold'
 export type ClipQuality = 'standard' | 'high'
+export type ClipSceneKind = 'media' | 'text' | 'cta'
 
 export type ClipScene = {
   id: string
-  item: MediaItem
+  kind: ClipSceneKind
+  item?: MediaItem
   label: string
+  body?: string
+  ctaLabel?: string
   weight: number
   accent: string
   motion?: ClipMotion
@@ -59,8 +63,8 @@ type Dimensions = {
 
 type LoadedScene = {
   scene: ClipScene
-  kind: 'image' | 'video'
-  source: HTMLImageElement | HTMLVideoElement
+  kind: 'image' | 'video' | 'canvas'
+  source: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement
   sourceDuration: number
   lastSeekTime?: number
 }
@@ -141,27 +145,6 @@ function isVideoItem(item: MediaItem) {
   return item.kind === 'video' || item.src.toLowerCase().endsWith('.mp4')
 }
 
-async function loadSceneSource(scene: ClipScene): Promise<LoadedScene> {
-  if (isVideoItem(scene.item)) {
-    const source = await loadVideo(scene.item.src)
-    return {
-      scene,
-      kind: 'video',
-      source,
-      sourceDuration: Number.isFinite(source.duration) && source.duration > 0 ? source.duration : 1,
-      lastSeekTime: -1,
-    }
-  }
-
-  const source = await loadImage(scene.item.poster ?? scene.item.src)
-  return {
-    scene,
-    kind: 'image',
-    source,
-    sourceDuration: 1,
-  }
-}
-
 function getDimensions(format: ClipFormat) {
   return FORMAT_DIMENSIONS[format]
 }
@@ -214,9 +197,23 @@ function drawCoverImage(
   alpha = 1,
 ) {
   const input =
-    source instanceof HTMLImageElement || source instanceof HTMLVideoElement ? source : null
-  const srcW = input instanceof HTMLVideoElement ? input.videoWidth : input?.width ?? dims.width
-  const srcH = input instanceof HTMLVideoElement ? input.videoHeight : input?.height ?? dims.height
+    source instanceof HTMLImageElement ||
+    source instanceof HTMLVideoElement ||
+    source instanceof HTMLCanvasElement
+      ? source
+      : null
+  const srcW =
+    input instanceof HTMLVideoElement
+      ? input.videoWidth
+      : input instanceof HTMLCanvasElement
+        ? input.width
+        : input?.width ?? dims.width
+  const srcH =
+    input instanceof HTMLVideoElement
+      ? input.videoHeight
+      : input instanceof HTMLCanvasElement
+        ? input.height
+        : input?.height ?? dims.height
   const srcRatio = srcW / srcH
   const destRatio = dims.width / dims.height
   const transform = getMotionTransform(motion, localProgress)
@@ -408,9 +405,135 @@ async function prepareSourceFrame(loaded: LoadedScene, sourceProgress: number) {
     return
   }
 
-  const videoSource = loaded.source as HTMLVideoElement
-  await seekVideo(videoSource, absoluteTime)
+  await seekVideo(loaded.source as HTMLVideoElement, absoluteTime)
   loaded.lastSeekTime = absoluteTime
+}
+
+function drawGraphicCardToCanvas(
+  scene: ClipScene,
+  dims: Dimensions,
+  accent: string,
+): HTMLCanvasElement {
+  const canvas = document.createElement('canvas')
+  canvas.width = dims.width
+  canvas.height = dims.height
+  const ctx = canvas.getContext('2d')
+  if (!ctx) {
+    return canvas
+  }
+
+  const base = ctx.createLinearGradient(0, 0, dims.width, dims.height)
+  base.addColorStop(0, '#0b0604')
+  base.addColorStop(0.45, '#1a100a')
+  base.addColorStop(1, '#060403')
+  ctx.fillStyle = base
+  ctx.fillRect(0, 0, dims.width, dims.height)
+
+  ctx.fillStyle = `${accent}18`
+  ctx.fillRect(dims.width * 0.08, dims.height * 0.08, dims.width * 0.84, dims.height * 0.84)
+
+  ctx.strokeStyle = `${accent}88`
+  ctx.lineWidth = 4
+  ctx.strokeRect(dims.width * 0.08, dims.height * 0.08, dims.width * 0.84, dims.height * 0.84)
+
+  ctx.fillStyle = '#f3a14b'
+  ctx.font = `700 ${Math.round(dims.width * 0.03)}px Arial`
+  ctx.fillText('AFTER DARK INSERT', dims.width * 0.12, dims.height * 0.18)
+
+  ctx.fillStyle = accent
+  ctx.font = `700 ${Math.round(dims.width * 0.082)}px Georgia`
+  wrapText(ctx, scene.label, dims.width * 0.12, dims.height * 0.32, dims.width * 0.72, dims.height * 0.085)
+
+  ctx.fillStyle = '#f0e1ca'
+  ctx.font = `${Math.round(dims.width * 0.032)}px Arial`
+  wrapText(
+    ctx,
+    scene.body ?? 'Exclusive content built right inside the timeline.',
+    dims.width * 0.12,
+    dims.height * 0.58,
+    dims.width * 0.74,
+    dims.height * 0.045,
+  )
+
+  if (scene.kind === 'cta') {
+    const buttonX = dims.width * 0.12
+    const buttonY = dims.height * 0.76
+    const buttonW = dims.width * 0.42
+    const buttonH = dims.height * 0.08
+    ctx.fillStyle = 'rgba(0,0,0,0.42)'
+    ctx.fillRect(buttonX, buttonY, buttonW, buttonH)
+    ctx.strokeStyle = accent
+    ctx.lineWidth = 3
+    ctx.strokeRect(buttonX, buttonY, buttonW, buttonH)
+    ctx.fillStyle = accent
+    ctx.font = `700 ${Math.round(dims.width * 0.03)}px Arial`
+    ctx.fillText(scene.ctaLabel ?? 'UNLOCK ACCESS', buttonX + dims.width * 0.04, buttonY + buttonH * 0.62)
+  }
+
+  return canvas
+}
+
+function wrapText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  lineHeight: number,
+) {
+  const words = text.split(/\s+/)
+  let line = ''
+  let cursorY = y
+
+  for (const word of words) {
+    const nextLine = line ? `${line} ${word}` : word
+    if (ctx.measureText(nextLine).width > maxWidth && line) {
+      ctx.fillText(line, x, cursorY)
+      line = word
+      cursorY += lineHeight
+    } else {
+      line = nextLine
+    }
+  }
+
+  if (line) {
+    ctx.fillText(line, x, cursorY)
+  }
+}
+
+async function loadSceneSource(scene: ClipScene, dims: Dimensions): Promise<LoadedScene> {
+  if (scene.kind === 'text' || scene.kind === 'cta') {
+    const source = drawGraphicCardToCanvas(scene, dims, scene.accent)
+    return {
+      scene,
+      kind: 'canvas',
+      source,
+      sourceDuration: 1,
+    }
+  }
+
+  if (!scene.item) {
+    throw new Error('Media scene is missing its source asset.')
+  }
+
+  if (isVideoItem(scene.item)) {
+    const source = await loadVideo(scene.item.src)
+    return {
+      scene,
+      kind: 'video',
+      source,
+      sourceDuration: Number.isFinite(source.duration) && source.duration > 0 ? source.duration : 1,
+      lastSeekTime: -1,
+    }
+  }
+
+  const source = await loadImage(scene.item.poster ?? scene.item.src)
+  return {
+    scene,
+    kind: 'image',
+    source,
+    sourceDuration: 1,
+  }
 }
 
 function drawTransitionFrame(
@@ -504,7 +627,7 @@ function drawTransitionFrame(
 
 export async function generateClip(settings: ClipSettings): Promise<Blob> {
   if (settings.scenes.length === 0) {
-    throw new Error('Choose at least one media asset for the clip.')
+    throw new Error('Choose at least one scene for the clip.')
   }
 
   const dims = getDimensions(settings.format)
@@ -514,7 +637,7 @@ export async function generateClip(settings: ClipSettings): Promise<Blob> {
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('Canvas context could not be created.')
 
-  const scenes = await Promise.all(settings.scenes.map(loadSceneSource))
+  const scenes = await Promise.all(settings.scenes.map((scene) => loadSceneSource(scene, dims)))
   const spans = computeSceneSpans(settings.scenes, settings.duration)
   const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
     ? 'video/webm;codecs=vp9'

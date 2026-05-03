@@ -8,9 +8,11 @@ Cross Border x Legacy `After Dark Uncensored` is a Vite + React microsite that t
 - highlights featured products and promo creative
 - exposes exported teaser clips and storyboard sheets
 - generates new short-form teaser clips directly in the browser with `MediaRecorder`
-- supports scene queue editing, reordering, duplication, and per-scene emphasis
+- supports a draggable timeline with scene strips, duplication, and per-scene emphasis
+- supports text cards and CTA cards directly inside the timeline
 - supports branded export presets such as `OF Teaser`, `IG Reel`, `Story Burst`, and `Product Spotlight`
 - supports scene-level transition overrides, timeline trimming for video scenes, and mixed image/video stitching
+- supports saved presets, export history, and generated thumbnail cards for uploaded videos
 - supports style presets, transition tuning, motion tuning, overlay modes, and title treatments
 - keeps the site deployable as a static Vercel project with no backend required
 
@@ -34,11 +36,12 @@ Open the local site and use it like this:
 1. Browse the `Media Vault` to review available assets.
 2. Open `Clip Lab`.
 3. Build a scene queue from the built-in library or your own uploaded images and videos.
-4. Reorder, duplicate, relabel, and weight scenes to control pacing.
+4. Drag timeline strips to reorder, duplicate, relabel, and weight scenes to control pacing.
 5. Choose a branded export preset or dial in output format, duration, quality, FPS, transitions, motion, overlays, and title style manually.
-6. Override individual scenes with their own motion and transition behavior.
-7. Use the trim handles on video scenes to choose which slice of the source clip gets stitched into the timeline.
-8. Generate, preview, refine, and download the finished `.webm` teaser.
+6. Add text cards and CTA cards anywhere in the sequence.
+7. Override individual scenes with their own motion and transition behavior.
+8. Use the trim handles on video scenes to choose which slice of the source clip gets stitched into the timeline.
+9. Save the build as a reusable preset, generate, preview, and download the finished `.webm` teaser.
 
 ## Asset Workflow
 
@@ -74,6 +77,7 @@ npm run build
 - `npm run build`
 - verify the hero, vault, storyboard, and clip sections load correctly
 - verify `Clip Lab` creates a preview and exposes a working download link
+- verify drag-reordering, text cards, and CTA cards work in-browser
 - verify queue edits, branded presets, transitions, and per-scene motion overrides work in-browser
 - verify uploaded video scenes expose trim handles and export correctly in a mixed media sequence
 
